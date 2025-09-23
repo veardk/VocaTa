@@ -1,0 +1,36 @@
+# 测试环境配置 (前后端联调)
+spring:
+  # 数据源配置
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:test-server.vocata.com}:${DB_PORT:5432}/${DB_NAME:vocata_test}
+    username: ${DB_USERNAME:vocata_test}
+    password: ${DB_PASSWORD:vocata_test}
+
+  # Redis配置
+  data:
+    redis:
+      host: ${REDIS_HOST:test-server.vocata.com}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:1}
+
+# 日志配置
+logging:
+  level:
+    com.vocata: info
+    org.springframework.web: info
+    org.springframework.security: info
+  file:
+    name: logs/vocata-test.log
+
+# MyBatis Plus配置 (测试环境关闭SQL日志)
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# Sa-Token配置 (测试环境调整)
+sa-token:
+  # 是否输出操作日志
+  is-log: true
+  # token有效期调整为7天
+  timeout: 604800

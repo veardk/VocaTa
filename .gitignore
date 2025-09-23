@@ -1,0 +1,193 @@
+# ================================
+# VocaTa 项目统一 GitIgnore 配置
+# ================================
+
+# ================================
+# 后端 (Spring Boot) 相关
+# ================================
+vocata-server/target/
+vocata-server/!.mvn/wrapper/maven-wrapper.jar
+vocata-server/!**/src/main/**/target/
+vocata-server/!**/src/test/**/target/
+
+# Maven
+**/target/
+**/.mvn/
+**/mvnw
+**/mvnw.cmd
+
+# ================================
+# 前端 (Vue 3 + Vite + Element Plus) 相关
+# ================================
+# 前端项目依赖
+**/node_modules/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/lerna-debug.log*
+
+# 前端构建产物
+**/dist/
+**/build/
+**/.vite/
+**/coverage/
+
+# 前端环境文件
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+
+# 包管理器锁文件 (Vue项目推荐保留package-lock.json)
+# **/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+
+# ================================
+# Vue 3 + Vite 特定文件
+# ================================
+# Vite缓存
+**/.vite/
+
+# Vue特定
+**/.vue-temp/
+
+# 测试相关
+**/coverage/
+**/.nyc_output/
+**/test-results/
+
+# Cypress
+**/cypress/videos/
+**/cypress/screenshots/
+
+# ================================
+# Element Plus 相关
+# ================================
+# 如果使用主题定制
+**/theme/
+**/custom-theme/
+
+# ================================
+# 开发工具相关
+# ================================
+# IDE
+**/.idea/
+**/.vscode/
+*.swp
+*.swo
+*~
+
+# Eclipse
+**/.project
+**/.classpath
+**/.c9/
+**/.settings/
+
+# IntelliJ IDEA
+*.iml
+*.ipr
+*.iws
+
+# ================================
+# 操作系统相关
+# ================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ================================
+# 日志文件
+# ================================
+**/logs/
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# ================================
+# 临时文件
+# ================================
+**/tmp/
+**/temp/
+**/.tmp/
+**/.cache/
+
+# ================================
+# 数据库相关
+# ================================
+**/*.sqlite
+**/*.db
+
+# ================================
+# 配置文件 (敏感信息)
+# ================================
+# 生产环境配置文件
+**/application-prod.yml
+**/application-production.yml
+**/.env.production
+
+
+# 数据库配置
+**/database.yml
+
+# ================================
+# 证书和密钥
+# ================================
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.jks
+
+# ================================
+# 备份文件
+# ================================
+**/*.bak
+**/*.backup
+**/*.orig
+
+# ================================
+# 压缩包
+# ================================
+**/*.zip
+**/*.tar.gz
+**/*.rar
+
+# ================================
+# 自定义忽略 (项目特定)
+# ================================
+# 上传文件目录
+**/uploads/
+**/static/uploads/
+
+# 文档生成
+**/docs/api/
+
+# 测试覆盖率报告
+**/coverage/
+**/.nyc_output/
+
+# todo file
+**/.todo/
+
+
+# ================================
+# 保留重要配置文件示例
+# ================================
+# 保留配置文件模板，但忽略实际配置
+!**/.env.example
+!**/application-example.yml
+!**/config.example.js
+

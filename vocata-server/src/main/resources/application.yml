@@ -1,0 +1,90 @@
+server:
+  port: 9009
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: vocata-server
+
+  # 本地开发数据源配置
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:vocata_local}
+    username: ${DB_USERNAME:vocata_local}
+    password: ${DB_PASSWORD:vocata_local}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # 本地Redis配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+# MyBatis Plus配置
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: isDelete
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      insert-strategy: NOT_NULL
+      update-strategy: NOT_NULL
+    banner: false
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+# Sa-Token配置
+sa-token:
+  # token名称
+  token-name: Authorization
+  # token有效期，单位s (30天)
+  timeout: 2592000
+  # token临时有效期，单位s
+  active-timeout: -1
+  # 是否允许同一账号并发登录
+  is-concurrent: true
+  # 在多人登录同一账号时，是否共用一个token
+  is-share: true
+  # token风格
+  token-style: uuid
+  # 是否输出操作日志
+  is-log: false
+  # 是否从header中读取token
+  is-read-header: true
+  # 是否从cookie中读取token
+  is-read-cookie: false
+  # 是否从body中读取token
+  is-read-body: false
+  # 配置Redis作为Sa-Token的持久层
+  alone-redis:
+    database: 1
+
+# 本地开发日志配置
+logging:
+  level:
+    com.vocata: debug
+    com.baomidou.mybatisplus: debug
+    org.springframework.web: debug
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/vocata-local.log
