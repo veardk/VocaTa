@@ -173,6 +173,8 @@ Desktop.ini
 # todo file
 **/.todo/
 
+# ai task
+**/.specs/
 
 # ================================
 # 保留重要配置文件示例
