@@ -1,0 +1,53 @@
+# 生产环境配置
+spring:
+  # 数据源配置
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:vocata}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # Redis配置
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DB:0}
+      lettuce:
+        pool:
+          max-active: 16
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 2
+
+# 日志配置
+logging:
+  level:
+    com.vocata: info
+    root: warn
+    org.springframework.web: warn
+  file:
+    name: /var/log/vocata/vocata-server.log
+    max-size: 100MB
+    max-history: 30
+
+# MyBatis Plus配置 (生产环境关闭SQL日志)
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# Sa-Token配置 (生产环境安全配置)
+sa-token:
+  # 是否输出操作日志
+  is-log: false
+  # token有效期 (生产环境7天)
+  timeout: 604800
+  # 更严格的安全配置
+  is-concurrent: false
+  is-share: false

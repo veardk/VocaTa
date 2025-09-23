@@ -130,15 +130,6 @@ Desktop.ini
 **/*.sqlite
 **/*.db
 
-# ================================
-# 配置文件 (敏感信息)
-# ================================
-# 生产环境配置文件
-**/application-prod.yml
-**/application-production.yml
-**/.env.production
-
-
 # 数据库配置
 **/database.yml
 

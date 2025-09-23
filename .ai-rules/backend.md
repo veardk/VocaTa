@@ -213,6 +213,8 @@ is_delete SMALLINT DEFAULT 0         -- 软删除标记 0.否 1.是
 ## 4. API接口设计规范
 
 ### 4.1 RESTful API规范
+`/api` 前缀已经配置，创建路由时可省略
+如`/api/client/{resource}`可写为 `/client/{resource}/xxx`
 
 **URL命名规范**：
 ```
@@ -490,7 +492,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=test
 2. 启动PostgreSQL和Redis服务
 3. 创建`vocata_local`数据库
 4. 运行`mvn spring-boot:run`启动服务
-5. 访问http://localhost:9010/api验证服务
+5. 访问http://localhost:9009/api验证服务
 
 ### 12.2 功能开发流程
 
