@@ -13,6 +13,7 @@ public class PageResult<T> implements Serializable {
     private Long total;
     private Integer totalPages;
     private List<T> list;
+    private List<T> records; // 兼容性字段，与list指向同一个数据
     private Boolean hasNext;
     private Boolean hasPrevious;
 
@@ -23,6 +24,7 @@ public class PageResult<T> implements Serializable {
         this.pageSize = pageSize;
         this.total = total;
         this.list = list;
+        this.records = list; // 保持兼容性
         this.totalPages = (int) Math.ceil((double) total / pageSize);
         this.hasNext = pageNum < totalPages;
         this.hasPrevious = pageNum > 1;
@@ -71,6 +73,16 @@ public class PageResult<T> implements Serializable {
 
     public void setList(List<T> list) {
         this.list = list;
+        this.records = list; // 保持兼容性
+    }
+
+    public List<T> getRecords() {
+        return records;
+    }
+
+    public void setRecords(List<T> records) {
+        this.records = records;
+        this.list = records; // 保持兼容性
     }
 
     public Boolean getHasNext() {
