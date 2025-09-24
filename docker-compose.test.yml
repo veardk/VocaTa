@@ -19,7 +19,7 @@ services:
   # 后端服务
   vocata-server:
     <<: *app-common
-    image: ${SERVER_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-server:test-latest}
+    image: ${SERVER_IMAGE:-ghcr.io/leivik/vocata-server:test-latest}
     container_name: vocata-server
     ports:
       - "${SERVER_PORT:-9010}:9010"
@@ -71,7 +71,7 @@ services:
   # 前端客户端
   vocata-web:
     <<: *app-common
-    image: ${WEB_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-web:test-latest}
+    image: ${WEB_IMAGE:-ghcr.io/leivik/vocata-web:test-latest}
     container_name: vocata-web
     ports:
       - "${WEB_PORT:-3000}:80"
@@ -93,7 +93,7 @@ services:
   # 管理后台
   vocata-admin:
     <<: *app-common
-    image: ${ADMIN_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-admin:test-latest}
+    image: ${ADMIN_IMAGE:-ghcr.io/leivik/vocata-admin:test-latest}
     container_name: vocata-admin
     ports:
       - "${ADMIN_PORT:-3001}:80"

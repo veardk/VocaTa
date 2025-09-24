@@ -19,32 +19,32 @@ public class SaTokenConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {
             // 公开接口，无需认证
-            SaRouter.match("/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**")
+            SaRouter.match("/api/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**")
                     .stop();
-            
+
             // 静态资源，无需认证
             SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**")
                     .stop();
-            
+
             // 客户端认证相关接口，无需预先认证
-            SaRouter.match("/client/auth/login", "/client/auth/register",
-                          "/client/auth/send-register-code", "/client/auth/send-reset-code",
-                          "/client/auth/reset-password", "/client/auth/refresh-token")
+            SaRouter.match("/api/client/auth/login", "/api/client/auth/register",
+                          "/api/client/auth/send-register-code", "/api/client/auth/send-reset-code",
+                          "/api/client/auth/reset-password", "/api/client/auth/refresh-token")
                     .stop();
 
             // 管理员认证接口，无需预先认证（但会在服务层验证管理员身份）
-            SaRouter.match("/admin/auth/login", "/admin/auth/refresh-token")
+            SaRouter.match("/api/admin/auth/login", "/api/admin/auth/refresh-token")
                     .stop();
 
             // 管理员专用接口，需要管理员权限
-            SaRouter.match("/admin/**").check(r -> {
+            SaRouter.match("/api/admin/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();
                 UserContext.checkAdmin();
             });
 
             // 客户端接口，需要登录（管理员和普通用户都能访问）
-            SaRouter.match("/client/**").check(r -> {
+            SaRouter.match("/api/client/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();
             });

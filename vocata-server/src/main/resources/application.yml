@@ -1,7 +1,6 @@
 server:
   port: 9009
-  servlet:
-    context-path: /api
+  # 去掉context-path，直接在Controller中使用完整路径
 
 spring:
   profiles:
