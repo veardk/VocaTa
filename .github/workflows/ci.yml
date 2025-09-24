@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ develop, master ]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
