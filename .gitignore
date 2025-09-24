@@ -188,3 +188,4 @@ Desktop.ini
 !**/application-example.yml
 !**/config.example.js
 
+/resources/application-local.yml
