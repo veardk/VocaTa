@@ -11,16 +11,15 @@ spring:
 
   # Jackson时间格式配置
   jackson:
-    # date-format: yyyy-MM-dd HH:mm:ss  # 已弃用，改为通过WebConfig配置
     time-zone: GMT+8
     serialization:
       write-dates-as-timestamps: false
 
   # 数据源配置
   datasource:
-    url: jdbc:postgresql://${DB_HOST:pg-1308f499-ruandoudou76-a5ae.e.aivencloud.com}:${DB_PORT:16490}/${DB_NAME:vocata_db}?sslmode=require&stringtype=unspecified
-    username: ${DB_USERNAME:avnadmin}
-    password: ${DB_PASSWORD:AVNS_2dV4yp5KiyG1UCNCrAB}
+    url: jdbc:postgresql://${DB_HOST:}:${DB_PORT:}/${DB_NAME:}?stringtype=unspecified
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -34,7 +33,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:vocata123456}
+      password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
       timeout: 10000ms
       lettuce:
@@ -101,6 +100,8 @@ sa-token:
   is-read-cookie: false
   # 是否从body中读取token
   is-read-body: false
+  # token前缀（支持Bearer前缀）
+  token-prefix: Bearer
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
     database: 1

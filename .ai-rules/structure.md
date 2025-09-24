@@ -160,6 +160,8 @@ src/main/resources/
 - 模块名使用单数形式：`user`、`character`、`conversation`
 - 层级名使用复数形式：`controllers`、`services`、`mappers`
 
+关于返回ID字段时都需要返回string类型给前端。
+
 ### 类命名
 - 使用PascalCase（大驼峰）
 - Controller：`{Module}Controller.java`

@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: vocata-postgres-dev
+    environment:
+      POSTGRES_DB: vocata_local
+      POSTGRES_USER: vocata
+      POSTGRES_PASSWORD: vocata123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vocata -d vocata_local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: vocata-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 后端服务
+  vocata-server:
+    build:
+      context: ./vocata-server
+      dockerfile: Dockerfile
+    container_name: vocata-server-dev
+    ports:
+      - "9010:9010"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vocata_local
+      SPRING_DATASOURCE_USERNAME: vocata
+      SPRING_DATASOURCE_PASSWORD: vocata123
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_DATABASE: 0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./vocata-server/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9010/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # 前端客户端
+  vocata-web:
+    build:
+      context: ./vocata-web
+      dockerfile: Dockerfile
+    container_name: vocata-web-dev
+    ports:
+      - "3000:80"
+    environment:
+      VITE_API_BASE_URL: http://localhost:9010/api
+    depends_on:
+      - vocata-server
+
+  # 管理后台
+  vocata-admin:
+    build:
+      context: ./vocata-admin
+      dockerfile: Dockerfile
+    container_name: vocata-admin-dev
+    ports:
+      - "3001:80"
+    environment:
+      VITE_API_BASE_URL: http://localhost:9010/api
+    depends_on:
+      - vocata-server
+
+  # pgAdmin (数据库管理工具)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vocata-pgadmin-dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@vocata.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  # MailHog (邮件测试工具)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: vocata-mailhog-dev
+    ports:
+      - "1025:1025"  # SMTP端口
+      - "8025:8025"  # Web界面端口
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: vocata-dev-network
