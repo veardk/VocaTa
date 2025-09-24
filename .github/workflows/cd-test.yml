@@ -36,7 +36,7 @@ jobs:
 
     - name: 设置 JDK ${{ env.JAVA_VERSION }}
       if: matrix.service.name == 'vocata-server'
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
@@ -51,17 +51,44 @@ jobs:
 
     - name: 缓存 Maven 依赖
       if: matrix.service.name == 'vocata-server'
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.m2
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
 
-    - name: 构建后端应用
+    - name: 构建后端应用（带重试）
       if: matrix.service.name == 'vocata-server'
       working-directory: ./vocata-server
       run: |
-        mvn clean package -DskipTests -Dspring.profiles.active=test
-        echo "JAR_FILE=$(find target -name '*.jar' | head -1)" >> $GITHUB_ENV
+        set -e
+        attempt=1
+        max_attempts=3
+        while [ $attempt -le $max_attempts ]; do
+          echo "后端构建尝试 $attempt/$max_attempts"
+          if mvn clean package -DskipTests -Dspring.profiles.active=test; then
+            echo "后端构建成功"
+            # 验证JAR文件
+            if ls target/*.jar 1> /dev/null 2>&1; then
+              JAR_FILE=$(find target -name '*.jar' | head -1)
+              echo "JAR文件: $JAR_FILE"
+              echo "JAR_FILE=$JAR_FILE" >> $GITHUB_ENV
+              break
+            else
+              echo "JAR文件未找到"
+              exit 1
+            fi
+          else
+            echo "后端构建失败，attempt $attempt/$max_attempts"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "所有后端构建尝试都失败了"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "清理并等待重试..."
+            mvn clean || true
+            sleep 5
+          fi
+        done
 
     - name: 构建前端应用
       if: matrix.service.name != 'vocata-server'
@@ -94,7 +121,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: ${{ matrix.service.context }}
-        file: ${{ matrix.service.dockerfile }}
+        file: ${{ matrix.service.name == 'vocata-server' && './vocata-server/Dockerfile.ci' || matrix.service.dockerfile }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}

@@ -45,10 +45,7 @@ RUN addgroup -g 1001 -S vocata && \
 # 复制构建产物
 COPY --from=build --chown=vocata:vocata /app/dist /usr/share/nginx/html
 
-# 复制Nginx配置
-COPY --chown=vocata:vocata nginx.conf /etc/nginx/nginx.conf
-
-# 创建默认的Nginx配置文件
+# 创建Nginx配置文件
 RUN cat > /etc/nginx/nginx.conf << 'EOF'
 user nginx;
 worker_processes auto;

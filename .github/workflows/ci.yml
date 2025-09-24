@@ -25,13 +25,13 @@ jobs:
       uses: actions/checkout@v4
 
     - name: 设置 JDK ${{ env.JAVA_VERSION }}
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
 
     - name: 缓存 Maven 依赖
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.m2
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -40,8 +40,27 @@ jobs:
     - name: 验证 Maven 配置
       run: mvn validate
 
-    - name: 编译项目
-      run: mvn clean compile -DskipTests
+    - name: 编译项目（带重试）
+      run: |
+        set -e
+        attempt=1
+        max_attempts=3
+        while [ $attempt -le $max_attempts ]; do
+          echo "编译尝试 $attempt/$max_attempts"
+          if mvn clean compile -DskipTests; then
+            echo "编译成功"
+            break
+          else
+            echo "编译失败，attempt $attempt/$max_attempts"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "所有编译尝试都失败了"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "等待5秒后重试..."
+            sleep 5
+          fi
+        done
 
     - name: 代码风格检查
       run: |
@@ -63,11 +82,38 @@ jobs:
         path: '**/target/surefire-reports/*.xml'
         reporter: java-junit
 
-    - name: 构建 JAR 包
-      run: mvn package -DskipTests
+    - name: 构建 JAR 包（带重试）
+      run: |
+        set -e
+        attempt=1
+        max_attempts=3
+        while [ $attempt -le $max_attempts ]; do
+          echo "构建尝试 $attempt/$max_attempts"
+          if mvn package -DskipTests; then
+            echo "构建成功"
+            # 验证JAR文件是否存在
+            if ls target/*.jar 1> /dev/null 2>&1; then
+              echo "JAR文件构建成功: $(ls target/*.jar)"
+              break
+            else
+              echo "JAR文件未找到，尝试重新构建"
+              attempt=$((attempt + 1))
+              continue
+            fi
+          else
+            echo "构建失败，attempt $attempt/$max_attempts"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "所有构建尝试都失败了"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "等待5秒后重试..."
+            sleep 5
+          fi
+        done
 
     - name: 上传构建产物
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: vocata-server-jar
         path: vocata-server/target/*.jar
@@ -104,7 +150,7 @@ jobs:
       run: npm run build:test
 
     - name: 上传构建产物
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: vocata-web-dist
         path: vocata-web/dist/
@@ -141,7 +187,7 @@ jobs:
       run: npm run build:test
 
     - name: 上传构建产物
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: vocata-admin-dist
         path: vocata-admin/dist/
