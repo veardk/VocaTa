@@ -16,6 +16,10 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   JAVA_VERSION: '17'
@@ -173,7 +177,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-server
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-server
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest
@@ -228,7 +232,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-web
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-web
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest
@@ -283,7 +287,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-admin
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-admin
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest

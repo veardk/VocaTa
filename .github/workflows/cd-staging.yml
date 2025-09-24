@@ -11,6 +11,10 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   JAVA_VERSION: '17'
@@ -104,7 +108,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository }}
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-server
         tags: |
           type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
           type=raw,value=staging-latest
@@ -158,7 +162,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository }}-web
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-web
         tags: |
           type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
           type=raw,value=staging-latest
@@ -212,7 +216,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository }}-admin
+        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-admin
         tags: |
           type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
           type=raw,value=staging-latest
@@ -252,9 +256,9 @@ jobs:
         COMPOSE_PROJECT_NAME=vocata-staging
 
         # 镜像配置
-        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:staging-latest', env.REGISTRY, github.repository_owner) }}
-        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:staging-latest', env.REGISTRY, github.repository_owner) }}
-        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:staging-latest', env.REGISTRY, github.repository_owner) }}
+        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:staging-latest', env.REGISTRY, github.actor) }}
+        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:staging-latest', env.REGISTRY, github.actor) }}
+        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:staging-latest', env.REGISTRY, github.actor) }}
 
         # 应用配置
         SERVER_PORT=9009
