@@ -16,6 +16,7 @@ public enum ApiCode {
 
     // 参数验证相关
     VALIDATE_FAILED(1001, "参数验证失败"),
+    PARAM_ERROR(1000, "参数错误"),
 
     // 用户相关
     USER_NOT_EXIST(1002, "用户不存在"),
@@ -42,7 +43,9 @@ public enum ApiCode {
     // 文件相关
     FILE_UPLOAD_FAILED(6001, "文件上传失败"),
     FILE_TYPE_NOT_SUPPORTED(6002, "不支持的文件类型"),
-    FILE_SIZE_EXCEEDED(6003, "文件大小超出限制");
+    FILE_SIZE_EXCEEDED(6003, "文件大小超出限制"),
+    FILE_EMPTY(6004, "文件不能为空"),
+    FILE_TYPE_NOT_ALLOWED(6005, "文件类型不允许");
 
     private final Integer code;
     private final String message;

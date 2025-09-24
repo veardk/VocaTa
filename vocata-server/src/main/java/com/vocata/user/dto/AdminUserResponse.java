@@ -1,41 +1,43 @@
 package com.vocata.user.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.time.LocalDateTime;
 
 /**
- * 用户响应
+ * 管理后台用户信息响应
+ *
+ * @author vocata
+ * @since 2025-09-24
  */
-public class UserResponse {
+public class AdminUserResponse {
 
-    private String id;
-
+    private Long id;
     private String username;
-
     private String email;
-
     private String nickname;
-
     private String avatar;
-
     private Integer gender;
-
     private String phone;
-
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime birthday;
-
     private Integer status;
-
-    private Boolean isAdmin;
-
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime lastLoginTime;
+    private String lastLoginIp;
+    private Integer loginFailCount;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime lockTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createDate;
 
-    private LocalDateTime lastLoginTime;
+    public AdminUserResponse() {}
 
-    public String getId() {
+    public Long getId() {
         return id;
     }
 
-    public void setId(String id) {
+    public void setId(Long id) {
         this.id = id;
     }
 
@@ -103,12 +105,36 @@ public class UserResponse {
         this.status = status;
     }
 
-    public Boolean getIsAdmin() {
-        return isAdmin;
+    public LocalDateTime getLastLoginTime() {
+        return lastLoginTime;
     }
 
-    public void setIsAdmin(Boolean isAdmin) {
-        this.isAdmin = isAdmin;
+    public void setLastLoginTime(LocalDateTime lastLoginTime) {
+        this.lastLoginTime = lastLoginTime;
+    }
+
+    public String getLastLoginIp() {
+        return lastLoginIp;
+    }
+
+    public void setLastLoginIp(String lastLoginIp) {
+        this.lastLoginIp = lastLoginIp;
+    }
+
+    public Integer getLoginFailCount() {
+        return loginFailCount;
+    }
+
+    public void setLoginFailCount(Integer loginFailCount) {
+        this.loginFailCount = loginFailCount;
+    }
+
+    public LocalDateTime getLockTime() {
+        return lockTime;
+    }
+
+    public void setLockTime(LocalDateTime lockTime) {
+        this.lockTime = lockTime;
     }
 
     public LocalDateTime getCreateDate() {
@@ -117,13 +143,5 @@ public class UserResponse {
 
     public void setCreateDate(LocalDateTime createDate) {
         this.createDate = createDate;
-    }
-
-    public LocalDateTime getLastLoginTime() {
-        return lastLoginTime;
-    }
-
-    public void setLastLoginTime(LocalDateTime lastLoginTime) {
-        this.lastLoginTime = lastLoginTime;
     }
 }
