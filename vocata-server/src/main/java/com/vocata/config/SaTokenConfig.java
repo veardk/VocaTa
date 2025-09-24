@@ -26,20 +26,30 @@ public class SaTokenConfig implements WebMvcConfigurer {
             SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**")
                     .stop();
             
-            // 认证相关接口，无需预先认证（注意：这里的路径是去掉/api前缀后的路径）
-            SaRouter.match("/client/auth/login", "/client/auth/register", 
-                          "/client/auth/send-register-code", "/client/auth/send-reset-code", 
+            // 客户端认证相关接口，无需预先认证
+            SaRouter.match("/client/auth/login", "/client/auth/register",
+                          "/client/auth/send-register-code", "/client/auth/send-reset-code",
                           "/client/auth/reset-password", "/client/auth/refresh-token")
                     .stop();
-            
+
+            // 管理员认证接口，无需预先认证（但会在服务层验证管理员身份）
+            SaRouter.match("/admin/auth/login", "/admin/auth/refresh-token")
+                    .stop();
+
             // 管理员专用接口，需要管理员权限
             SaRouter.match("/admin/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();
                 UserContext.checkAdmin();
             });
-            
-            // 其他所有接口，需要登录认证
+
+            // 客户端接口，需要登录（管理员和普通用户都能访问）
+            SaRouter.match("/client/**").check(r -> {
+                StpUtil.checkLogin();
+                setUserContext();
+            });
+
+            // 其他接口，需要登录认证（通用接口）
             SaRouter.match("/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();

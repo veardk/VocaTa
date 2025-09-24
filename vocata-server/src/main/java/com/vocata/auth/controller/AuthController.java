@@ -18,7 +18,7 @@ import jakarta.validation.constraints.NotBlank;
  * 认证控制器
  */
 @RestController
-@RequestMapping("/client/auth")
+@RequestMapping("/api/client/auth")
 @Validated
 public class AuthController {
 

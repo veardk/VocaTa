@@ -159,7 +159,7 @@ public class EmailServiceImpl implements EmailService {
                         <p class="warning">⚠️ 此邮件为系统自动发送，请勿回复</p>
                     </div>
                     <div class="footer">
-                        <p>© 2024 VocaTa AI角色平台 | 让每一次对话都充满魅力</p>
+                        <p>© 2025 VocaTa AI角色平台 | 让每一次对话都充满魅力</p>
                     </div>
                 </div>
             </body>
