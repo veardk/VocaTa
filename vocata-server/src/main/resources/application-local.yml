@@ -1,0 +1,58 @@
+# 本地开发环境配置 - application-local.yml中的配置
+server:
+  port: 9009
+spring:
+  # 数据源配置
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:pg-1308f499-ruandoudou76-a5ae.e.aivencloud.com}:${DB_PORT:16490}/${DB_NAME:vocata_db}?sslmode=require&stringtype=unspecified
+    username: ${DB_USERNAME:avnadmin}
+    password: ${DB_PASSWORD:AVNS_2dV4yp5KiyG1UCNCrAB}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # Redis配置
+  data:
+    redis:
+      host: 1.15.141.96
+      port: 6379
+      password: rDWjD9zYEcLAKxa
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+  # 邮件配置 (163邮箱SMTP)
+  mail:
+    host: smtp.163.com
+    port: 465
+    username: veardk@163.com
+    password: FR6V5WXBfLGHxt4k
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
+
+# 开发环境日志配置
+logging:
+  level:
+    com.vocata: debug
+    com.baomidou.mybatisplus: debug
+    org.springframework.web: debug
