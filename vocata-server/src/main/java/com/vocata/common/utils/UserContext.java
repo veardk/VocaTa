@@ -89,6 +89,15 @@ public class UserContext {
     }
 
     /**
+     * 检查非管理员权限（管理员不能访问普通用户功能）
+     */
+    public static void checkNotAdmin() {
+        if (isAdmin()) {
+            throw new BizException(ApiCode.FORBIDDEN.getCode(), "管理员不能访问此功能，请使用管理后台");
+        }
+    }
+
+    /**
      * 检查是否为当前用户或管理员
      */
     public static void checkUserOrAdmin(Long userId) {

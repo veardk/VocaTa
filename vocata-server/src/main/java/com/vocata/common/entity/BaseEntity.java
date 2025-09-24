@@ -25,6 +25,9 @@ public class BaseEntity implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE, value = "update_date")
     private LocalDateTime updateDate;
 
+    /**
+     *  0.未删除 1.已删除
+     */
     @TableLogic
     @TableField(value = "is_delete")
     private Integer isDelete;

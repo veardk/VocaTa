@@ -28,6 +28,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import java.util.Random;
 
 /**
  * 认证服务实现
@@ -73,8 +74,8 @@ public class AuthServiceImpl implements AuthService {
         // 3. 获取邮箱注册锁，防止并发注册
         String registrationLock = acquireRegistrationLock(registerRequest.getEmail());
         try {
-            // 4. 再次检查用户名和邮箱是否已存在（防止并发创建）
-            checkUserExists(registerRequest.getUsername(), registerRequest.getEmail());
+            // 4. 再次检查邮箱是否已存在（防止并发创建）
+            checkUserExists(registerRequest.getEmail());
 
             // 5. 创建用户
             User user = createUser(registerRequest);
@@ -87,6 +88,7 @@ public class AuthServiceImpl implements AuthService {
             // 7. 返回用户信息
             UserResponse response = new UserResponse();
             BeanUtils.copyProperties(user, response);
+            response.setId(user.getId().toString());
 
             log.info("用户注册成功，用户ID：{}，用户名：{}，邮箱：{}", user.getId(), user.getUsername(), user.getEmail());
             return response;
@@ -134,6 +136,7 @@ public class AuthServiceImpl implements AuthService {
 
         UserResponse userResponse = new UserResponse();
         BeanUtils.copyProperties(user, userResponse);
+        userResponse.setId(user.getId().toString());
         response.setUser(userResponse);
 
         log.info("用户登录成功，用户ID：{}，用户名：{}，IP：{}", user.getId(), user.getUsername(), clientIp);
@@ -174,6 +177,7 @@ public class AuthServiceImpl implements AuthService {
 
         UserResponse userResponse = new UserResponse();
         BeanUtils.copyProperties(user, userResponse);
+        userResponse.setId(user.getId().toString());
         response.setUser(userResponse);
 
         return response;
@@ -270,14 +274,35 @@ public class AuthServiceImpl implements AuthService {
     /**
      * 检查用户是否已存在
      */
-    private void checkUserExists(String username, String email) {
-        if (getUserByUsername(username) != null) {
-            throw new BizException(ApiCode.BAD_REQUEST.getCode(), "用户名已存在");
-        }
-
+    private void checkUserExists(String email) {
         if (getUserByEmail(email) != null) {
             throw new BizException(ApiCode.BAD_REQUEST.getCode(), "邮箱已被注册");
         }
+    }
+
+    /**
+     * 生成唯一的用户名
+     */
+    private String generateUniqueUsername() {
+        String username;
+        Random random = new Random();
+        int maxAttempts = 10;
+        int attempts = 0;
+
+        do {
+            // 生成8位随机数字
+            String randomNumber = String.format("%08d", random.nextInt(100000000));
+            username = "vocata-" + randomNumber;
+            attempts++;
+
+            if (attempts > maxAttempts) {
+                // 如果尝试次数过多，使用时间戳确保唯一性
+                username = "vocata-" + System.currentTimeMillis();
+                break;
+            }
+        } while (getUserByUsername(username) != null);
+
+        return username;
     }
 
     /**
@@ -285,11 +310,11 @@ public class AuthServiceImpl implements AuthService {
      */
     private User createUser(UserRegisterRequest request) {
         User user = new User();
-        user.setUsername(request.getUsername());
+        user.setUsername(generateUniqueUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setNickname(StringUtils.hasText(request.getNickname()) ?
-            request.getNickname() : request.getUsername());
+            request.getNickname() : "VocaTa用户");
         user.setGender(request.getGender() != null ? request.getGender() : AuthConstants.GENDER_UNSET);
         user.setStatus(AuthConstants.USER_STATUS_NORMAL);
         user.setIsAdmin(false);
