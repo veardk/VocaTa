@@ -3,6 +3,7 @@ package com.vocata.user.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 用户个人信息响应DTO
@@ -15,7 +16,7 @@ public class UserProfileResponse {
     /**
      * 用户ID
      */
-    private Long id;
+    private String id;
 
     /**
      * 用户名
@@ -51,7 +52,7 @@ public class UserProfileResponse {
      * 生日
      */
     @JsonFormat(pattern = "yyyy-MM-dd")
-    private LocalDateTime birthday;
+    private LocalDate birthday;
 
     /**
      * 注册时间
@@ -62,9 +63,9 @@ public class UserProfileResponse {
     public UserProfileResponse() {
     }
 
-    public UserProfileResponse(Long id, String username, String email, String nickname,
+    public UserProfileResponse(String id, String username, String email, String nickname,
                              String avatar, Integer gender, String phone,
-                             LocalDateTime birthday, LocalDateTime createDate) {
+                             LocalDate birthday, LocalDateTime createDate) {
         this.id = id;
         this.username = username;
         this.email = email;
@@ -80,11 +81,11 @@ public class UserProfileResponse {
         return new UserProfileResponseBuilder();
     }
 
-    public Long getId() {
+    public String getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
 
@@ -136,11 +137,11 @@ public class UserProfileResponse {
         this.phone = phone;
     }
 
-    public LocalDateTime getBirthday() {
+    public LocalDate getBirthday() {
         return birthday;
     }
 
-    public void setBirthday(LocalDateTime birthday) {
+    public void setBirthday(LocalDate birthday) {
         this.birthday = birthday;
     }
 
@@ -153,17 +154,17 @@ public class UserProfileResponse {
     }
 
     public static class UserProfileResponseBuilder {
-        private Long id;
+        private String id;
         private String username;
         private String email;
         private String nickname;
         private String avatar;
         private Integer gender;
         private String phone;
-        private LocalDateTime birthday;
+        private LocalDate birthday;
         private LocalDateTime createDate;
 
-        public UserProfileResponseBuilder id(Long id) {
+        public UserProfileResponseBuilder id(String id) {
             this.id = id;
             return this;
         }
@@ -198,7 +199,7 @@ public class UserProfileResponse {
             return this;
         }
 
-        public UserProfileResponseBuilder birthday(LocalDateTime birthday) {
+        public UserProfileResponseBuilder birthday(LocalDate birthday) {
             this.birthday = birthday;
             return this;
         }

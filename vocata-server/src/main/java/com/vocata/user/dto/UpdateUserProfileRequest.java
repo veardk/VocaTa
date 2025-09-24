@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 更新用户个人信息请求DTO
@@ -41,13 +41,13 @@ public class UpdateUserProfileRequest {
      * 生日
      */
     @JsonFormat(pattern = "yyyy-MM-dd")
-    private LocalDateTime birthday;
+    private LocalDate birthday;
 
     public UpdateUserProfileRequest() {
     }
 
     public UpdateUserProfileRequest(String nickname, String avatar, Integer gender,
-                                  String phone, LocalDateTime birthday) {
+                                  String phone, LocalDate birthday) {
         this.nickname = nickname;
         this.avatar = avatar;
         this.gender = gender;
@@ -91,11 +91,11 @@ public class UpdateUserProfileRequest {
         this.phone = phone;
     }
 
-    public LocalDateTime getBirthday() {
+    public LocalDate getBirthday() {
         return birthday;
     }
 
-    public void setBirthday(LocalDateTime birthday) {
+    public void setBirthday(LocalDate birthday) {
         this.birthday = birthday;
     }
 
@@ -104,7 +104,7 @@ public class UpdateUserProfileRequest {
         private String avatar;
         private Integer gender;
         private String phone;
-        private LocalDateTime birthday;
+        private LocalDate birthday;
 
         public UpdateUserProfileRequestBuilder nickname(String nickname) {
             this.nickname = nickname;
@@ -126,7 +126,7 @@ public class UpdateUserProfileRequest {
             return this;
         }
 
-        public UpdateUserProfileRequestBuilder birthday(LocalDateTime birthday) {
+        public UpdateUserProfileRequestBuilder birthday(LocalDate birthday) {
             this.birthday = birthday;
             return this;
         }
