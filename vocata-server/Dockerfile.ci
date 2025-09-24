@@ -22,7 +22,7 @@ RUN addgroup -g 1001 -S vocata && \
 WORKDIR /app
 
 # 复制JAR文件（从CI/CD构建阶段）
-COPY target/vocata-server-*.jar app.jar
+COPY vocata-server/target/vocata-server-*.jar app.jar
 
 # 创建必要目录并设置权限
 RUN mkdir -p /app/logs /app/uploads /var/log/vocata && \
