@@ -11,6 +11,8 @@ public enum ApiCode {
     FORBIDDEN(403, "权限不足"),
     NOT_FOUND(404, "请求的资源不存在"),
     ERROR(500, "系统内部错误"),
+    TOO_MANY_REQUESTS(429, "请求过于频繁，请稍后再试"),
+    INTERNAL_SERVER_ERROR(500, "服务器内部错误"),
 
     // 参数验证相关
     VALIDATE_FAILED(1001, "参数验证失败"),

@@ -23,7 +23,7 @@ public class WebConfig implements WebMvcConfigurer {
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // 允许所有来源（生产环境应该指定具体域名）
+        // 允许所有来源
         config.addAllowedOriginPattern("*");
 
         // 允许所有HTTP方法

@@ -166,6 +166,8 @@ Desktop.ini
 # 文档生成
 **/docs/api/
 
+**/.sql/
+
 # 测试覆盖率报告
 **/coverage/
 **/.nyc_output/
@@ -175,6 +177,8 @@ Desktop.ini
 
 # ai task
 **/.specs/
+
+**/application-local.yml
 
 # ================================
 # 保留重要配置文件示例
