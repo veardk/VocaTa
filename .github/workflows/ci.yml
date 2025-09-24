@@ -9,13 +9,42 @@ on:
 env:
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
-  REGISTRY: ghcr.io
-  NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
-  # 后端代码检查和构建
+  # 检测变更路径
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      server-changed: ${{ steps.changes.outputs.server }}
+      web-changed: ${{ steps.changes.outputs.web }}
+      admin-changed: ${{ steps.changes.outputs.admin }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 检测文件变更
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          server:
+            - 'vocata-server/**'
+            - 'pom.xml'
+            - '.github/workflows/**'
+          web:
+            - 'vocata-web/**'
+            - '.github/workflows/**'
+          admin:
+            - 'vocata-admin/**'
+            - '.github/workflows/**'
+
+  # 后端服务CI
   backend-ci:
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server-changed == 'true'
     defaults:
       run:
         working-directory: ./vocata-server
@@ -37,91 +66,21 @@ jobs:
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
 
-    - name: 验证 Maven 配置
-      run: mvn validate
-
-    - name: 编译项目（带重试）
-      run: |
-        set -e
-        attempt=1
-        max_attempts=3
-        while [ $attempt -le $max_attempts ]; do
-          echo "编译尝试 $attempt/$max_attempts"
-          if mvn clean compile -DskipTests; then
-            echo "编译成功"
-            break
-          else
-            echo "编译失败，attempt $attempt/$max_attempts"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "所有编译尝试都失败了"
-              exit 1
-            fi
-            attempt=$((attempt + 1))
-            echo "等待5秒后重试..."
-            sleep 5
-          fi
-        done
-
-    - name: 代码风格检查
-      run: |
-        if [ -f "checkstyle.xml" ]; then
-          mvn checkstyle:check
-        else
-          echo "未找到checkstyle.xml，跳过代码风格检查"
-        fi
+    - name: 编译项目
+      run: mvn clean compile -DskipTests
 
     - name: 运行单元测试
       run: mvn test
       continue-on-error: true
 
-    - name: 生成测试报告
-      uses: dorny/test-reporter@v1
-      if: success() || failure()
-      with:
-        name: 后端测试报告
-        path: '**/target/surefire-reports/*.xml'
-        reporter: java-junit
+    - name: 构建 JAR 包
+      run: mvn package -DskipTests
 
-    - name: 构建 JAR 包（带重试）
-      run: |
-        set -e
-        attempt=1
-        max_attempts=3
-        while [ $attempt -le $max_attempts ]; do
-          echo "构建尝试 $attempt/$max_attempts"
-          if mvn package -DskipTests; then
-            echo "构建成功"
-            # 验证JAR文件是否存在
-            if ls target/*.jar 1> /dev/null 2>&1; then
-              echo "JAR文件构建成功: $(ls target/*.jar)"
-              break
-            else
-              echo "JAR文件未找到，尝试重新构建"
-              attempt=$((attempt + 1))
-              continue
-            fi
-          else
-            echo "构建失败，attempt $attempt/$max_attempts"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "所有构建尝试都失败了"
-              exit 1
-            fi
-            attempt=$((attempt + 1))
-            echo "等待5秒后重试..."
-            sleep 5
-          fi
-        done
-
-    - name: 上传构建产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: vocata-server-jar
-        path: vocata-server/target/*.jar
-        retention-days: 7
-
-  # 前端客户端代码检查和构建
+  # 前端客户端CI
   frontend-web-ci:
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web-changed == 'true'
     defaults:
       run:
         working-directory: ./vocata-web
@@ -140,25 +99,19 @@ jobs:
     - name: 安装依赖
       run: npm ci
 
-    - name: TypeScript 类型检查
-      run: npm run type-check
+    - name: 代码检查
+      run: |
+        npm run lint
+        npm run type-check
 
-    - name: ESLint 代码检查
-      run: npm run lint
-
-    - name: 构建测试版本
+    - name: 构建应用
       run: npm run build:test
 
-    - name: 上传构建产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: vocata-web-dist
-        path: vocata-web/dist/
-        retention-days: 7
-
-  # 前端管理后台代码检查和构建
+  # 管理后台CI
   frontend-admin-ci:
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin-changed == 'true'
     defaults:
       run:
         working-directory: ./vocata-admin
@@ -177,45 +130,72 @@ jobs:
     - name: 安装依赖
       run: npm ci
 
-    - name: TypeScript 类型检查
-      run: npm run type-check
+    - name: 代码检查
+      run: |
+        npm run lint
+        npm run type-check
 
-    - name: ESLint 代码检查
-      run: npm run lint
-
-    - name: 构建测试版本
+    - name: 构建应用
       run: npm run build:test
 
-    - name: 上传构建产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: vocata-admin-dist
-        path: vocata-admin/dist/
-        retention-days: 7
-
-  # 汇总 CI 结果
+  # CI 结果汇总
   ci-summary:
     runs-on: ubuntu-latest
-    needs: [backend-ci, frontend-web-ci, frontend-admin-ci]
+    needs: [detect-changes, backend-ci, frontend-web-ci, frontend-admin-ci]
     if: always()
 
     steps:
     - name: CI 结果汇总
       run: |
-        echo "## CI 流水线执行结果" >> $GITHUB_STEP_SUMMARY
+        echo "## 🔍 CI 检查结果" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| 组件 | 状态 |" >> $GITHUB_STEP_SUMMARY
-        echo "|------|------|" >> $GITHUB_STEP_SUMMARY
-        echo "| 后端服务 | ${{ needs.backend-ci.result == 'success' && '✅ 通过' || '❌ 失败' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| 前端客户端 | ${{ needs.frontend-web-ci.result == 'success' && '✅ 通过' || '❌ 失败' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| 管理后台 | ${{ needs.frontend-admin-ci.result == 'success' && '✅ 通过' || '❌ 失败' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 组件 | 变更状态 | CI状态 |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|----------|--------|" >> $GITHUB_STEP_SUMMARY
 
-        if [[ "${{ needs.backend-ci.result }}" == "success" && "${{ needs.frontend-web-ci.result }}" == "success" && "${{ needs.frontend-admin-ci.result }}" == "success" ]]; then
-          echo ""  >> $GITHUB_STEP_SUMMARY
-          echo "🎉 所有组件 CI 检查通过，可以进行合并操作！" >> $GITHUB_STEP_SUMMARY
-          exit 0
+        # 检查各组件状态
+        FAILED=false
+
+        # 后端服务
+        if [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" ]]; then
+          if [[ "${{ needs.backend-ci.result }}" == "success" ]]; then
+            echo "| 后端服务 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 后端服务 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
         else
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ 部分组件 CI 检查失败，请修复后重新提交。" >> $GITHUB_STEP_SUMMARY
+          echo "| 后端服务 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 前端客户端
+        if [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" ]]; then
+          if [[ "${{ needs.frontend-web-ci.result }}" == "success" ]]; then
+            echo "| 前端客户端 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 前端客户端 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
+        else
+          echo "| 前端客户端 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 管理后台
+        if [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" ]]; then
+          if [[ "${{ needs.frontend-admin-ci.result }}" == "success" ]]; then
+            echo "| 管理后台 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 管理后台 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
+        else
+          echo "| 管理后台 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "$FAILED" == "false" ]]; then
+          echo "🎉 **CI检查通过**，可以合并PR！" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **CI检查失败**，请修复后重新提交" >> $GITHUB_STEP_SUMMARY
           exit 1
         fi

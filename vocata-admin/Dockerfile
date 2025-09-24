@@ -123,7 +123,7 @@ http {
 
         # 管理API代理
         location /api {
-            proxy_pass http://vocata-server:9010;
+            proxy_pass http://vocata-server:9009;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
