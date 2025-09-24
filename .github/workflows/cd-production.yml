@@ -1,0 +1,650 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要部署的版本标签'
+        required: true
+        type: string
+      force_rebuild:
+        description: '强制重建所有镜像'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # 验证版本标签和准备部署
+  prepare-production:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image-tag: ${{ steps.version.outputs.image-tag }}
+      deploy-all: ${{ steps.strategy.outputs.deploy-all }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 解析版本信息
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.tag }}"
+        else
+          VERSION="${GITHUB_REF#refs/tags/}"
+        fi
+
+        # 验证版本格式 (v1.0.0)
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ 版本标签格式错误: $VERSION"
+          echo "正确格式示例: v1.0.0, v2.1.3"
+          exit 1
+        fi
+
+        IMAGE_TAG="$VERSION"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "✅ 版本验证通过: $VERSION"
+
+    - name: 确定部署策略
+      id: strategy
+      run: |
+        if [[ "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+          echo "deploy-all=true" >> $GITHUB_OUTPUT
+          echo "强制重建模式：将构建所有组件"
+        else
+          echo "deploy-all=false" >> $GITHUB_OUTPUT
+          echo "智能部署模式：仅构建有变更的组件"
+        fi
+
+    - name: 生成部署报告
+      run: |
+        echo "## 🚀 生产环境部署准备" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **版本**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **镜像标签**: ${{ steps.version.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **提交版本**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **部署策略**: ${{ steps.strategy.outputs.deploy-all == 'true' && '强制重建所有组件' || '智能增量部署' }}" >> $GITHUB_STEP_SUMMARY
+
+  # 检测变更 (仅在非强制重建时)
+  detect-changes:
+    runs-on: ubuntu-latest
+    needs: prepare-production
+    if: needs.prepare-production.outputs.deploy-all == 'false'
+    outputs:
+      server-changed: ${{ steps.changes.outputs.server }}
+      web-changed: ${{ steps.changes.outputs.web }}
+      admin-changed: ${{ steps.changes.outputs.admin }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 检测文件变更 (相比上一个版本标签)
+      id: changes
+      run: |
+        # 获取上一个版本标签
+        PREVIOUS_TAG=$(git tag -l "v*.*.*" --sort=-version:refname | grep -v "^${{ needs.prepare-production.outputs.version }}$" | head -n 1)
+
+        if [[ -z "$PREVIOUS_TAG" ]]; then
+          echo "首次发布，构建所有组件"
+          echo "server-changed=true" >> $GITHUB_OUTPUT
+          echo "web-changed=true" >> $GITHUB_OUTPUT
+          echo "admin-changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "对比版本: $PREVIOUS_TAG -> ${{ needs.prepare-production.outputs.version }}"
+
+          # 检测各组件变更
+          if git diff --name-only $PREVIOUS_TAG..HEAD | grep -E '^vocata-server/|^pom.xml' > /dev/null; then
+            echo "server-changed=true" >> $GITHUB_OUTPUT
+            echo "✓ 后端服务有变更"
+          else
+            echo "server-changed=false" >> $GITHUB_OUTPUT
+            echo "- 后端服务无变更"
+          fi
+
+          if git diff --name-only $PREVIOUS_TAG..HEAD | grep -E '^vocata-web/' > /dev/null; then
+            echo "web-changed=true" >> $GITHUB_OUTPUT
+            echo "✓ 前端客户端有变更"
+          else
+            echo "web-changed=false" >> $GITHUB_OUTPUT
+            echo "- 前端客户端无变更"
+          fi
+
+          if git diff --name-only $PREVIOUS_TAG..HEAD | grep -E '^vocata-admin/' > /dev/null; then
+            echo "admin-changed=true" >> $GITHUB_OUTPUT
+            echo "✓ 管理后台有变更"
+          else
+            echo "admin-changed=false" >> $GITHUB_OUTPUT
+            echo "- 管理后台无变更"
+          fi
+        fi
+
+  # 构建后端镜像
+  build-server:
+    runs-on: ubuntu-latest
+    needs: [prepare-production, detect-changes]
+    if: always() && (needs.prepare-production.outputs.deploy-all == 'true' ||
+        (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.server-changed == 'true'))
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: 缓存 Maven 依赖
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
+    - name: 构建后端应用 (生产版本)
+      working-directory: ./vocata-server
+      run: mvn clean package -DskipTests -Dspring.profiles.active=prod
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-server
+        tags: |
+          type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
+          type=raw,value=latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-server
+        file: ./vocata-server/Dockerfile.ci
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-server-production
+        cache-to: type=gha,mode=max,scope=vocata-server-production
+
+  # 构建前端客户端镜像
+  build-web:
+    runs-on: ubuntu-latest
+    needs: [prepare-production, detect-changes]
+    if: always() && (needs.prepare-production.outputs.deploy-all == 'true' ||
+        (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.web-changed == 'true'))
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-web/package-lock.json
+
+    - name: 构建前端应用 (生产版本)
+      working-directory: ./vocata-web
+      run: |
+        npm ci
+        npm run build:prod
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-web
+        tags: |
+          type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
+          type=raw,value=latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-web
+        file: ./vocata-web/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-web-production
+        cache-to: type=gha,mode=max,scope=vocata-web-production
+
+  # 构建管理后台镜像
+  build-admin:
+    runs-on: ubuntu-latest
+    needs: [prepare-production, detect-changes]
+    if: always() && (needs.prepare-production.outputs.deploy-all == 'true' ||
+        (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.admin-changed == 'true'))
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-admin/package-lock.json
+
+    - name: 构建管理后台应用 (生产版本)
+      working-directory: ./vocata-admin
+      run: |
+        npm ci
+        npm run build:prod
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vocata-admin
+        tags: |
+          type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
+          type=raw,value=latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-admin
+        file: ./vocata-admin/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-admin-production
+        cache-to: type=gha,mode=max,scope=vocata-admin-production
+
+  # 部署到生产服务器
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [prepare-production, detect-changes, build-server, build-web, build-admin]
+    if: always() && (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') &&
+        (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
+        (needs.build-admin.result == 'success' || needs.build-admin.result == 'skipped')
+    environment:
+      name: production
+      url: https://vocata.com
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备生产部署配置
+      run: |
+        mkdir -p deploy/production
+
+        # 生成 .env 文件
+        cat > deploy/production/.env << EOF
+        # VocaTa 生产环境配置
+        COMPOSE_PROJECT_NAME=vocata-production
+
+        # 镜像配置
+        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:latest', env.REGISTRY, github.repository_owner) }}
+        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:latest', env.REGISTRY, github.repository_owner) }}
+        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:latest', env.REGISTRY, github.repository_owner) }}
+
+        # 应用配置
+        SERVER_PORT=9009
+        WEB_PORT=3000
+        ADMIN_PORT=3001
+        SPRING_PROFILES_ACTIVE=prod
+
+        # 数据库配置
+        DB_HOST=${{ secrets.DB_HOST }}
+        DB_PORT=${{ secrets.DB_PORT }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USERNAME=${{ secrets.DB_USERNAME }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+        # Redis配置
+        REDIS_HOST=${{ secrets.REDIS_HOST }}
+        REDIS_PORT=${{ secrets.REDIS_PORT }}
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        REDIS_DATABASE=0
+
+        # 七牛云配置
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        QINIU_BUCKET=${{ secrets.QINIU_BUCKET }}
+        QINIU_DOMAIN=${{ secrets.QINIU_DOMAIN }}
+        QINIU_REGION=${{ secrets.QINIU_REGION }}
+
+        # 邮箱配置
+        EMAIL_USER_NAME=${{ secrets.EMAIL_USER_NAME }}
+        EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
+
+        # 部署信息
+        DEPLOY_VERSION=${{ needs.prepare-production.outputs.version }}
+        DEPLOY_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+        DEPLOY_COMMIT=${{ github.sha }}
+        EOF
+
+        # 复制 docker-compose 配置
+        cp docker-compose.prod.yml deploy/production/docker-compose.yml
+
+        # 生成生产部署脚本 (蓝绿部署)
+        cat > deploy/production/deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        echo "=== VocaTa 生产环境部署开始 ==="
+        echo "版本: $DEPLOY_VERSION"
+        echo "提交: $DEPLOY_COMMIT"
+
+        # 加载环境变量
+        source .env
+
+        # 登录 Docker Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+        # 确定需要更新的服务
+        SERVICES_TO_UPDATE=()
+
+        if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-server")
+          echo "✓ 将更新后端服务: $SERVER_IMAGE"
+        fi
+
+        if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-web")
+          echo "✓ 将更新前端客户端: $WEB_IMAGE"
+        fi
+
+        if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-admin")
+          echo "✓ 将更新管理后台: $ADMIN_IMAGE"
+        fi
+
+        if [ ${#SERVICES_TO_UPDATE[@]} -eq 0 ]; then
+          echo "⚠ 没有服务需要更新"
+          exit 0
+        fi
+
+        # 拉取最新镜像
+        echo "📥 拉取镜像..."
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          case $service in
+            "vocata-server")
+              docker pull $SERVER_IMAGE
+              ;;
+            "vocata-web")
+              docker pull $WEB_IMAGE
+              ;;
+            "vocata-admin")
+              docker pull $ADMIN_IMAGE
+              ;;
+          esac
+        done
+
+        # 创建备份
+        echo "📋 创建配置备份..."
+        BACKUP_DIR="backup/$(date +'%Y%m%d-%H%M%S')"
+        mkdir -p $BACKUP_DIR
+        cp .env docker-compose.yml $BACKUP_DIR/
+
+        # 蓝绿部署策略
+        echo "🔄 执行蓝绿部署..."
+
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          echo "部署 $service (蓝绿模式)..."
+
+          # 1. 启动新容器
+          docker-compose up -d --no-deps --scale $service=2 $service
+
+          # 2. 等待新容器就绪
+          sleep 20
+
+          # 3. 健康检查新容器
+          case $service in
+            "vocata-server")
+              for i in {1..6}; do
+                if curl -f -m 10 "http://localhost:9009/api/actuator/health" > /dev/null 2>&1; then
+                  echo "✓ 新的后端服务健康检查通过"
+                  break
+                fi
+                sleep 5
+              done
+              ;;
+            "vocata-web")
+              for i in {1..6}; do
+                if curl -f -m 10 "http://localhost:3000" > /dev/null 2>&1; then
+                  echo "✓ 新的前端客户端健康检查通过"
+                  break
+                fi
+                sleep 5
+              done
+              ;;
+            "vocata-admin")
+              for i in {1..6}; do
+                if curl -f -m 10 "http://localhost:3001" > /dev/null 2>&1; then
+                  echo "✓ 新的管理后台健康检查通过"
+                  break
+                fi
+                sleep 5
+              done
+              ;;
+          esac
+
+          # 4. 切换到单个新容器
+          docker-compose up -d --no-deps --scale $service=1 $service
+        done
+
+        # 最终健康检查
+        echo "🏥 最终健康检查..."
+        HEALTH_FAILED=false
+
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          case $service in
+            "vocata-server")
+              if ! curl -f -m 30 "http://localhost:9009/api/actuator/health" > /dev/null 2>&1; then
+                echo "✗ 后端服务最终健康检查失败"
+                HEALTH_FAILED=true
+              else
+                echo "✓ 后端服务运行正常"
+              fi
+              ;;
+            "vocata-web")
+              if ! curl -f -m 30 "http://localhost:3000" > /dev/null 2>&1; then
+                echo "✗ 前端客户端最终健康检查失败"
+                HEALTH_FAILED=true
+              else
+                echo "✓ 前端客户端运行正常"
+              fi
+              ;;
+            "vocata-admin")
+              if ! curl -f -m 30 "http://localhost:3001" > /dev/null 2>&1; then
+                echo "✗ 管理后台最终健康检查失败"
+                HEALTH_FAILED=true
+              else
+                echo "✓ 管理后台运行正常"
+              fi
+              ;;
+          esac
+        done
+
+        if [[ "$HEALTH_FAILED" == "true" ]]; then
+          echo "❌ 生产部署失败: 最终健康检查未通过"
+          echo "正在回滚到之前版本..."
+
+          # 简单回滚策略
+          docker-compose restart "${SERVICES_TO_UPDATE[@]}"
+          sleep 30
+
+          echo "回滚完成，请手动检查服务状态"
+          exit 1
+        fi
+
+        # 清理旧镜像 (保守策略)
+        echo "🧹 清理无用镜像..."
+        docker image prune -f || true
+
+        echo "🎉 生产环境部署成功!"
+        echo "版本: $DEPLOY_VERSION"
+        echo "更新的服务: ${SERVICES_TO_UPDATE[*]}"
+        echo "部署时间: $DEPLOY_TIME"
+        EOF
+
+        chmod +x deploy/production/deploy.sh
+
+    - name: 复制文件到生产服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
+        source: "deploy/production/*"
+        target: "/home/deploy/vocata/"
+        strip_components: 2
+
+    - name: 执行生产部署
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
+        script: |
+          cd /home/deploy/vocata
+          chmod +x deploy.sh
+          ./deploy.sh
+
+    - name: 部署结果报告
+      if: always()
+      run: |
+        echo "## 🚀 生产环境部署结果" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ **生产环境部署成功**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 发布详情" >> $GITHUB_STEP_SUMMARY
+          echo "- **版本**: ${{ needs.prepare-production.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **提交版本**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **发布时间**: $(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
+          echo "- **部署策略**: 蓝绿部署" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 生产访问地址" >> $GITHUB_STEP_SUMMARY
+          echo "- [前端客户端](https://vocata.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- [管理后台](https://admin.vocata.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- [后端API](https://api.vocata.com)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ 部署的组件" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" ]]; then
+            echo "- ✅ 后端服务 (\`${{ needs.build-server.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" ]]; then
+            echo "- ✅ 前端客户端 (\`${{ needs.build-web.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ needs.prepare-production.outputs.deploy-all }}" == "true" ]] || [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" ]]; then
+            echo "- ✅ 管理后台 (\`${{ needs.build-admin.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 **VocaTa ${{ needs.prepare-production.outputs.version }} 正式上线！**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **生产环境部署失败**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "请立即检查部署日志并采取修复措施。" >> $GITHUB_STEP_SUMMARY
+          echo "如果需要，请执行回滚操作。" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # 生产部署后验证
+  post-deploy-verification:
+    runs-on: ubuntu-latest
+    needs: [prepare-production, deploy-production]
+    if: success()
+    steps:
+    - name: 等待服务稳定
+      run: sleep 120
+
+    - name: 生产环境验证
+      run: |
+        echo "## 🔍 生产环境验证报告" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        VERIFICATION_PASSED=true
+
+        # API健康检查 (假设使用域名)
+        echo "验证后端API..."
+        if curl -f -m 60 "https://api.vocata.com/api/actuator/health" > /dev/null 2>&1; then
+          echo "✅ 后端API验证通过" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 后端API验证失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        # 前端验证
+        echo "验证前端客户端..."
+        if curl -f -m 60 "https://vocata.com" > /dev/null 2>&1; then
+          echo "✅ 前端客户端验证通过" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 前端客户端验证失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        # 管理后台验证
+        echo "验证管理后台..."
+        if curl -f -m 60 "https://admin.vocata.com" > /dev/null 2>&1; then
+          echo "✅ 管理后台验证通过" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 管理后台验证失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "$VERIFICATION_PASSED" == "true" ]]; then
+          echo "🎉 **生产环境验证全部通过！**" >> $GITHUB_STEP_SUMMARY
+          echo "VocaTa ${{ needs.prepare-production.outputs.version }} 版本运行正常。" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **生产环境验证部分失败**" >> $GITHUB_STEP_SUMMARY
+          echo "请立即检查相关服务状态。" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
