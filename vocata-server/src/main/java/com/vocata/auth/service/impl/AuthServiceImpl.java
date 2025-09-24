@@ -62,7 +62,7 @@ public class AuthServiceImpl implements AuthService {
         // 1. 验证参数
         validateRegisterRequest(registerRequest);
 
-        // 2. 先验证验证码（不删除）
+        // 2. 先验证验证码
         if (!verificationCodeService.verifyCode(
                 registerRequest.getEmail(),
                 registerRequest.getVerificationCode(),

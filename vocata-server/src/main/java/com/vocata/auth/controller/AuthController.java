@@ -31,7 +31,7 @@ public class AuthController {
     @PostMapping("/register")
     public ApiResponse<UserResponse> register(@Valid @RequestBody UserRegisterRequest request) {
         UserResponse response = authService.register(request);
-        return ApiResponse.success(response);
+        return ApiResponse.success("用户注册成功", response);
     }
 
     /**
@@ -40,7 +40,7 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
-        return ApiResponse.success(response);
+        return ApiResponse.success("登录成功", response);
     }
 
     /**
@@ -49,7 +49,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {
         authService.logout();
-        return ApiResponse.success();
+        return ApiResponse.success("登出成功");
     }
 
     /**
@@ -58,7 +58,7 @@ public class AuthController {
     @PostMapping("/refresh-token")
     public ApiResponse<LoginResponse> refreshToken(@RequestBody String refreshToken) {
         LoginResponse response = authService.refreshToken(refreshToken);
-        return ApiResponse.success(response);
+        return ApiResponse.success("Token刷新成功", response);
     }
 
     /**
@@ -67,7 +67,7 @@ public class AuthController {
     @PostMapping("/send-register-code")
     public ApiResponse<Void> sendRegisterCode(@RequestParam @NotBlank @Email String email) {
         authService.sendRegisterCode(email);
-        return ApiResponse.success();
+        return ApiResponse.success("验证码发送成功");
     }
 
     /**
@@ -76,7 +76,7 @@ public class AuthController {
     @PostMapping("/send-reset-code")
     public ApiResponse<Void> sendResetPasswordCode(@RequestParam @NotBlank @Email String email) {
         authService.sendResetPasswordCode(email);
-        return ApiResponse.success();
+        return ApiResponse.success("重置密码验证码发送成功");
     }
 
     /**
@@ -88,7 +88,7 @@ public class AuthController {
             @RequestParam @NotBlank String newPassword,
             @RequestParam @NotBlank String verificationCode) {
         authService.resetPassword(email, newPassword, verificationCode);
-        return ApiResponse.success();
+        return ApiResponse.success("密码重置成功");
     }
 
     /**
@@ -99,6 +99,6 @@ public class AuthController {
             @RequestParam @NotBlank String oldPassword,
             @RequestParam @NotBlank String newPassword) {
         authService.changePassword(oldPassword, newPassword);
-        return ApiResponse.success();
+        return ApiResponse.success("密码修改成功");
     }
 }
