@@ -1,4 +1,8 @@
 # 生产环境配置
+server:
+  port: ${SERVER_PORT:9009}
+  # 生产环境不使用 context-path，通过反向代理处理路径
+
 spring:
   # 数据源配置
   datasource:

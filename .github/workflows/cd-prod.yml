@@ -74,7 +74,7 @@ jobs:
           - name: vocata-server
             context: ./vocata-server
             dockerfile: ./vocata-server/Dockerfile
-            port: 9010
+            port: 9009
           - name: vocata-web
             context: ./vocata-web
             dockerfile: ./vocata-web/Dockerfile
@@ -229,7 +229,7 @@ jobs:
         EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
 
         # 应用配置
-        SERVER_PORT=9010
+        SERVER_PORT=9009
         WEB_PORT=80
         ADMIN_PORT=80
 
@@ -326,7 +326,7 @@ jobs:
             log_info "开始健康检查: $env_name"
 
             while [ $attempt -le $max_attempts ]; do
-                if docker-compose -p $env_name exec -T vocata-server curl -f http://localhost:9010/api/actuator/health > /dev/null 2>&1; then
+                if docker-compose -p $env_name exec -T vocata-server curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
                     log_success "$env_name 健康检查通过"
                     return 0
                 else
@@ -348,7 +348,7 @@ jobs:
             # 这里需要根据实际的负载均衡配置进行调整
             # 例如更新 Nginx upstream 或者 HAProxy 配置
             # 示例代码（需要根据实际情况调整）:
-            # sudo sed -i "s/server .*:9010/server ${target_env}_vocata-server:9010/" /etc/nginx/upstream.conf
+            # sudo sed -i "s/server .*:9009/server ${target_env}_vocata-server:9009/" /etc/nginx/upstream.conf
             # sudo nginx -s reload
 
             log_success "流量切换完成"
@@ -467,7 +467,7 @@ jobs:
         # 健康检查
         sleep 60
         for i in {1..10}; do
-            if curl -f http://localhost:9010/api/actuator/health > /dev/null 2>&1; then
+            if curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
                 echo "✅ 回滚成功！版本: $ROLLBACK_VERSION"
                 exit 0
             else
