@@ -1,5 +1,6 @@
 package com.vocata.test;
 
+import com.vocata.common.result.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,8 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,7 +32,7 @@ public class DatabaseTestController {
      * 测试数据库连接和表访问
      */
     @GetMapping("/database")
-    public Map<String, Object> testDatabase() {
+    public ApiResponse<Map<String, Object>> testDatabase() {
         Map<String, Object> result = new HashMap<>();
 
         try {
@@ -84,6 +83,6 @@ public class DatabaseTestController {
             result.put("连接错误", e.getMessage());
         }
 
-        return result;
+        return ApiResponse.success("数据库测试完成", result);
     }
 }
