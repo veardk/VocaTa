@@ -41,7 +41,7 @@ public class UserServiceImpl implements UserService {
         }
 
         return UserProfileResponse.builder()
-                .id(user.getId())
+                .id(user.getId().toString())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .nickname(user.getNickname())

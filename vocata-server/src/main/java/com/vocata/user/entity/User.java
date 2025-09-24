@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.vocata.common.entity.BaseEntity;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 用户实体
@@ -30,7 +31,7 @@ public class User extends BaseEntity {
 
     private String phone;
 
-    private LocalDateTime birthday;
+    private LocalDate birthday;
 
     private Integer status;
 
@@ -108,11 +109,11 @@ public class User extends BaseEntity {
         this.phone = phone;
     }
 
-    public LocalDateTime getBirthday() {
+    public LocalDate getBirthday() {
         return birthday;
     }
 
-    public void setBirthday(LocalDateTime birthday) {
+    public void setBirthday(LocalDate birthday) {
         this.birthday = birthday;
     }
 
