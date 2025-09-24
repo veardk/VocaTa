@@ -237,7 +237,6 @@ jobs:
         (needs.build-admin.result == 'success' || needs.build-admin.result == 'skipped')
     environment:
       name: staging
-      url: http://${{ secrets.STAGING_HOST }}:3000
 
     steps:
     - name: 检出代码
