@@ -20,7 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
  * @since 2025-09-24
  */
 @RestController
-@RequestMapping("/client/user")
+@RequestMapping("/api/client/user")
 @SaCheckLogin
 public class UserController {
 

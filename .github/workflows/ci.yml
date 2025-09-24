@@ -9,8 +9,8 @@ on:
 env:
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  NAMESPACE: vocata
+  REGISTRY: ghcr.io
+  NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
   # 后端代码检查和构建

@@ -16,7 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
  * @since 2025-09-24
  */
 @RestController
-@RequestMapping("/client/file")
+@RequestMapping("/api/client/file")
 @SaCheckLogin
 public class FileController {
 

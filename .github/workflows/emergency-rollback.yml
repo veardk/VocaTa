@@ -25,8 +25,8 @@ on:
         type: string
 
 env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  NAMESPACE: vocata
+  REGISTRY: ghcr.io
+  NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
   # 预检查
@@ -164,7 +164,7 @@ jobs:
         echo "回滚原因: ${{ inputs.reason }}"
 
         # 登录Docker Registry
-        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
         # 备份当前状态
         echo "📦 备份当前状态..."
@@ -262,11 +262,9 @@ jobs:
         username: ${{ secrets.STAGING_USER }}
         key: ${{ secrets.STAGING_SSH_KEY }}
         port: 22
-        envs: ALIYUN_REGISTRY_USER,ALIYUN_REGISTRY_PASSWORD
+        envs: VERSION
         script: |
           cd /home/deploy/vocata
-          export ALIYUN_REGISTRY_USER="${{ secrets.ALIYUN_REGISTRY_USER }}"
-          export ALIYUN_REGISTRY_PASSWORD="${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
           ./emergency-rollback.sh
 
   # 生产环境回滚
@@ -356,7 +354,7 @@ jobs:
         echo "原因: ${{ inputs.reason }}"
 
         # 登录Docker Registry
-        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
         # 紧急备份
         log_info "🗄️ 执行紧急备份..."
@@ -511,12 +509,10 @@ jobs:
         username: ${{ secrets.PRODUCTION_USER }}
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
-        envs: ALIYUN_REGISTRY_USER,ALIYUN_REGISTRY_PASSWORD
+        envs: VERSION
         timeout: 1800  # 30分钟超时
         script: |
           cd /home/deploy/vocata
-          export ALIYUN_REGISTRY_USER="${{ secrets.ALIYUN_REGISTRY_USER }}"
-          export ALIYUN_REGISTRY_PASSWORD="${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
           ./emergency-rollback.sh
 
   # 回滚验证
