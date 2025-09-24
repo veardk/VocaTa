@@ -146,7 +146,7 @@ jobs:
         EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
 
         # 端口配置
-        SERVER_PORT=9010
+        SERVER_PORT=9009
         WEB_PORT=3000
         ADMIN_PORT=3001
         SPRING_PROFILES_ACTIVE=test
@@ -192,7 +192,7 @@ jobs:
 
         # 检查后端服务
         for i in {1..10}; do
-          if curl -f http://localhost:9010/api/actuator/health > /dev/null 2>&1; then
+          if curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
             echo "✅ 后端服务回滚成功"
             break
           else
@@ -317,7 +317,7 @@ jobs:
         EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
 
         # 端口配置
-        SERVER_PORT=9010
+        SERVER_PORT=9009
         WEB_PORT=8080
         ADMIN_PORT=8081
         SPRING_PROFILES_ACTIVE=prod
@@ -422,7 +422,7 @@ jobs:
         # 检查后端服务
         HEALTH_CHECK_PASSED=true
         for i in {1..15}; do
-          if curl -f http://localhost:9010/api/actuator/health > /dev/null 2>&1; then
+          if curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
             log_success "✅ 后端服务回滚成功"
             break
           else

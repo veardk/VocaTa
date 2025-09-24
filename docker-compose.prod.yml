@@ -27,10 +27,10 @@ services:
     image: ${SERVER_IMAGE:-ghcr.io/leivik/vocata-server:latest}
     container_name: vocata-server
     ports:
-      - "${SERVER_PORT:-9010}:9010"
+      - "${SERVER_PORT:-9009}:9009"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
-      - SERVER_PORT=9010
+      - SERVER_PORT=9009
       # 数据库配置
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT:-5432}
@@ -59,7 +59,7 @@ services:
       - server-uploads:/app/uploads
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9010/api/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9009/api/actuator/health"]
       interval: 30s
       timeout: 15s
       retries: 5

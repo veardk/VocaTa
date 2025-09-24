@@ -20,7 +20,7 @@ jobs:
           - name: vocata-server
             context: ./vocata-server
             dockerfile: ./vocata-server/Dockerfile
-            port: 9010
+            port: 9009
           - name: vocata-web
             context: ./vocata-web
             dockerfile: ./vocata-web/Dockerfile
@@ -164,7 +164,7 @@ jobs:
         EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
 
         # 应用配置
-        SERVER_PORT=9010
+        SERVER_PORT=9009
         WEB_PORT=3000
         ADMIN_PORT=3001
 
@@ -226,7 +226,7 @@ jobs:
         }
 
         # 检查后端服务
-        health_check "vocata-server" 9010 "/api/actuator/health"
+        health_check "vocata-server" 9009 "/api/actuator/health"
 
         # 检查前端服务
         health_check "vocata-web" 3000
