@@ -10,6 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * Sa-Token配置
+ * 
  */
 @Configuration
 public class SaTokenConfig implements WebMvcConfigurer {
@@ -17,28 +18,31 @@ public class SaTokenConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {
-            // 全局登录检查
-            SaRouter.match("/**")
-                    .notMatch("/api/open/**")
-                    .notMatch("/api/client/auth/**")
-                    .notMatch("/static/**")
-                    .notMatch("/images/**")
-                    .notMatch("/css/**")
-                    .notMatch("/js/**")
-                    .notMatch("/actuator/health")
-                    .notMatch("/error")
-                    .notMatch("/favicon.ico")
-                    .check(r -> {
-                        StpUtil.checkLogin();
-                        // 设置用户上下文
-                        setUserContext();
-                    });
-
-            // 管理端权限控制
-            SaRouter.match("/api/admin/**").check(r -> {
+            // 公开接口，无需认证
+            SaRouter.match("/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**")
+                    .stop();
+            
+            // 静态资源，无需认证
+            SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**")
+                    .stop();
+            
+            // 认证相关接口，无需预先认证（注意：这里的路径是去掉/api前缀后的路径）
+            SaRouter.match("/client/auth/login", "/client/auth/register", 
+                          "/client/auth/send-register-code", "/client/auth/send-reset-code", 
+                          "/client/auth/reset-password", "/client/auth/refresh-token")
+                    .stop();
+            
+            // 管理员专用接口，需要管理员权限
+            SaRouter.match("/admin/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();
                 UserContext.checkAdmin();
+            });
+            
+            // 其他所有接口，需要登录认证
+            SaRouter.match("/**").check(r -> {
+                StpUtil.checkLogin();
+                setUserContext();
             });
 
         })).addPathPatterns("/**");

@@ -4,14 +4,16 @@ server:
     context-path: /api
 
 spring:
+  profiles:
+    active: local
   application:
     name: vocata-server
 
-  # 本地开发数据源配置
+  # 数据源配置
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:vocata_local}
-    username: ${DB_USERNAME:vocata_local}
-    password: ${DB_PASSWORD:vocata_local}
+    url: jdbc:postgresql://${DB_HOST:pg-1308f499-ruandoudou76-a5ae.e.aivencloud.com}:${DB_PORT:16490}/${DB_NAME:vocata_db}?sslmode=require&stringtype=unspecified
+    username: ${DB_USERNAME:avnadmin}
+    password: ${DB_PASSWORD:AVNS_2dV4yp5KiyG1UCNCrAB}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -25,7 +27,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:vocata123456}
       database: ${REDIS_DATABASE:0}
       timeout: 10000ms
       lettuce:
@@ -35,6 +37,25 @@ spring:
           max-idle: 8
           min-idle: 0
 
+
+  # 邮件配置
+  mail:
+    host: smtp.163.com
+    port: 465
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
 # MyBatis Plus配置
 mybatis-plus:
   configuration:
