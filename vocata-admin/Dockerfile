@@ -48,9 +48,8 @@ COPY --from=build --chown=vocata:vocata /app/dist /usr/share/nginx/html
 # 复制Nginx配置
 COPY --chown=vocata:vocata nginx.conf /etc/nginx/nginx.conf
 
-# 创建管理后台专用的Nginx配置（如果项目中没有）
-RUN if [ ! -f /etc/nginx/nginx.conf ]; then \
-    cat > /etc/nginx/nginx.conf << 'EOF'
+# 创建默认的Nginx配置文件
+RUN cat > /etc/nginx/nginx.conf << 'EOF'
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log;
@@ -164,7 +163,6 @@ http {
     }
 }
 EOF
-fi
 
 # 设置权限
 RUN chown -R vocata:vocata /usr/share/nginx/html /etc/nginx
