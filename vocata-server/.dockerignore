@@ -1,0 +1,112 @@
+# Docker 构建忽略文件
+# 减少构建上下文大小，提高构建速度
+
+# 版本控制
+.git
+.gitignore
+.github
+
+# 开发工具
+.vscode
+.idea
+*.iml
+*.iws
+*.ipr
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# 日志文件
+logs/
+*.log
+log4j.properties
+logback-spring.xml
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 编译产物 (在多阶段构建中不需要)
+target/
+build/
+out/
+dist/
+node_modules/
+.npm
+
+# 测试相关
+coverage/
+test-results/
+junit.xml
+*.cover
+
+# 运行时文件
+*.pid
+*.seed
+*.pid.lock
+
+# 环境配置 (包含敏感信息)
+.env
+.env.*
+*.env
+application-local.yml
+application-dev.yml
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 证书和密钥
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Docker 相关
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD 配置
+.github/
+.gitlab-ci.yml
+.travis.yml
+jenkinsfile
+
+# 文档
+README*.md
+CHANGELOG*.md
+LICENSE
+docs/
+*.md
+
+# 备份文件
+*.bak
+*.backup
+*.old
+
+# IDE 配置
+.settings/
+.project
+.classpath
+.factorypath
+.springBeans
+.sts4-cache
+
+# Maven wrapper 包装器 jar 文件 (保留脚本)
+.mvn/wrapper/maven-wrapper.jar
+
+# 上传的文件
+uploads/
+files/
+
+# 缓存
+.cache/
+*.cache

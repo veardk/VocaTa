@@ -164,7 +164,7 @@ Desktop.ini
 **/static/uploads/
 
 # 文档生成
-**/docs/api/
+**/.docs/api/
 
 **/.sql/
 

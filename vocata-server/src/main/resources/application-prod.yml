@@ -2,9 +2,10 @@
 spring:
   # 数据源配置
   datasource:
-    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:vocata}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://${DB_HOST_PROD}:${DB_PORT_PROD}/${DB_NAME_PROD}?stringtype=unspecified
+    username: ${DB_USERNAME_PROD}
+    password: ${DB_PASSWORD_PROD}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20
       minimum-idle: 10
@@ -15,10 +16,11 @@ spring:
   # Redis配置
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD}
-      database: ${REDIS_DB:0}
+      host: ${REDIS_HOST_PROD}
+      port: ${REDIS_PORT_PROD:6379}
+      password: ${REDIS_PASSWORD_PROD}
+      database: ${REDIS_DATABASE_PROD:0}
+      timeout: 10000ms
       lettuce:
         pool:
           max-active: 16
@@ -26,28 +28,70 @@ spring:
           max-idle: 8
           min-idle: 2
 
+# 七牛云配置 - 生产环境
+qiniu:
+  access-key: ${QINIU_ACCESS_KEY_PROD}
+  secret-key: ${QINIU_SECRET_KEY_PROD}
+  bucket: ${QINIU_BUCKET_PROD:vocata-files-prod}
+  domain: ${QINIU_DOMAIN_PROD:https://files.vocata.com}
+  region: ${QINIU_REGION_PROD:huadong}
+
+# MyBatis Plus配置 (生产环境关闭SQL日志)
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: isDelete
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      insert-strategy: NOT_NULL
+      update-strategy: NOT_NULL
+    banner: false
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+# Sa-Token配置 (生产环境安全配置)
+sa-token:
+  # token名称
+  token-name: Authorization
+  # token有效期 (生产环境7天)
+  timeout: 604800
+  # token临时有效期，单位s
+  active-timeout: -1
+  # 更严格的安全配置 - 禁止并发登录
+  is-concurrent: false
+  # 在多人登录同一账号时，是否共用一个token
+  is-share: false
+  # token风格
+  token-style: uuid
+  # 是否输出操作日志 (生产环境关闭)
+  is-log: false
+  # 是否从header中读取token
+  is-read-header: true
+  # 是否从cookie中读取token
+  is-read-cookie: false
+  # 是否从body中读取token
+  is-read-body: false
+  # token前缀（支持Bearer前缀）
+  token-prefix: Bearer
+  # 配置Redis作为Sa-Token的持久层
+  alone-redis:
+    database: 1
+
 # 日志配置
 logging:
   level:
     com.vocata: info
     root: warn
     org.springframework.web: warn
+    org.springframework.security: warn
+    com.baomidou.mybatisplus: warn
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
   file:
     name: /var/log/vocata/vocata-server.log
     max-size: 100MB
     max-history: 30
-
-# MyBatis Plus配置 (生产环境关闭SQL日志)
-mybatis-plus:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
-# Sa-Token配置 (生产环境安全配置)
-sa-token:
-  # 是否输出操作日志
-  is-log: false
-  # token有效期 (生产环境7天)
-  timeout: 604800
-  # 更严格的安全配置
-  is-concurrent: false
-  is-share: false

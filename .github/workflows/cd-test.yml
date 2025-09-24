@@ -1,0 +1,324 @@
+name: Test Environment CD Pipeline
+
+on:
+  push:
+    branches: [ develop ]
+
+env:
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  NAMESPACE: vocata
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # 构建和推送镜像
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: vocata-server
+            context: ./vocata-server
+            dockerfile: ./vocata-server/Dockerfile
+            port: 9010
+          - name: vocata-web
+            context: ./vocata-web
+            dockerfile: ./vocata-web/Dockerfile
+            port: 80
+          - name: vocata-admin
+            context: ./vocata-admin
+            dockerfile: ./vocata-admin/Dockerfile
+            port: 80
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 JDK ${{ env.JAVA_VERSION }}
+      if: matrix.service.name == 'vocata-server'
+      uses: actions/setup-java@v3
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      if: matrix.service.name != 'vocata-server'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: ${{ matrix.service.name }}/package-lock.json
+
+    - name: 缓存 Maven 依赖
+      if: matrix.service.name == 'vocata-server'
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
+    - name: 构建后端应用
+      if: matrix.service.name == 'vocata-server'
+      working-directory: ./vocata-server
+      run: |
+        mvn clean package -DskipTests -Dspring.profiles.active=test
+        echo "JAR_FILE=$(find target -name '*.jar' | head -1)" >> $GITHUB_ENV
+
+    - name: 构建前端应用
+      if: matrix.service.name != 'vocata-server'
+      working-directory: ${{ matrix.service.context }}
+      run: |
+        npm ci
+        npm run build:test
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录到阿里云容器镜像服务
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+        password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+
+    - name: 提取元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.service.name }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix=test-{{date 'YYYYMMDD-HHmmss'}}-
+          type=raw,value=test-latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ matrix.service.context }}
+        file: ${{ matrix.service.dockerfile }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+
+    outputs:
+      server-image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-server:test-latest
+      web-image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-web:test-latest
+      admin-image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-admin:test-latest
+
+  # 部署到测试服务器
+  deploy-to-test:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: test
+      url: https://test.vocata.com
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备部署文件
+      run: |
+        # 创建部署目录
+        mkdir -p deploy/test
+
+        # 复制Docker Compose配置
+        cp docker-compose.test.yml deploy/test/docker-compose.yml
+
+        # 设置环境变量
+        cat > deploy/test/.env << EOF
+        # VocaTa Test Environment Configuration
+        COMPOSE_PROJECT_NAME=vocata-test
+
+        # 镜像配置
+        SERVER_IMAGE=${{ needs.build-and-push.outputs.server-image }}
+        WEB_IMAGE=${{ needs.build-and-push.outputs.web-image }}
+        ADMIN_IMAGE=${{ needs.build-and-push.outputs.admin-image }}
+
+        # 数据库配置 - 使用统一的secret名称
+        DB_HOST=${{ secrets.DB_HOST }}
+        DB_PORT=${{ secrets.DB_PORT }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USERNAME=${{ secrets.DB_USERNAME }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+        # Redis配置
+        REDIS_HOST=${{ secrets.REDIS_HOST }}
+        REDIS_PORT=${{ secrets.REDIS_PORT }}
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        REDIS_DATABASE=${{ secrets.REDIS_DATABASE }}
+
+        # 七牛云配置
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        QINIU_BUCKET=${{ secrets.QINIU_BUCKET }}
+        QINIU_DOMAIN=${{ secrets.QINIU_DOMAIN }}
+        QINIU_REGION=${{ secrets.QINIU_REGION }}
+
+        # 163邮箱SMTP配置
+        EMAIL_USER_NAME=${{ secrets.EMAIL_USER_NAME }}
+        EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
+
+        # 应用配置
+        SERVER_PORT=9010
+        WEB_PORT=3000
+        ADMIN_PORT=3001
+
+        # 环境标识
+        SPRING_PROFILES_ACTIVE=test
+        EOF
+
+        # 创建部署脚本
+        cat > deploy/test/deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        echo "开始部署测试环境..."
+
+        # 登录Docker Registry
+        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$ALIYUN_REGISTRY_USER" --password-stdin
+
+        # 停止现有服务
+        docker-compose down --remove-orphans || true
+
+        # 清理旧镜像
+        docker system prune -f || true
+
+        # 拉取最新镜像
+        docker-compose pull
+
+        # 启动服务
+        docker-compose up -d
+
+        # 等待服务启动
+        echo "等待服务启动..."
+        sleep 30
+
+        # 检查服务状态
+        docker-compose ps
+
+        # 健康检查函数
+        health_check() {
+          local service=$1
+          local port=$2
+          local path=${3:-""}
+          local max_attempts=12
+          local attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f "http://localhost:$port$path" > /dev/null 2>&1; then
+              echo "✅ $service 服务健康检查通过"
+              return 0
+            else
+              echo "⏳ 等待 $service 服务启动... ($attempt/$max_attempts)"
+              sleep 10
+              ((attempt++))
+            fi
+          done
+
+          echo "❌ $service 服务健康检查失败"
+          docker-compose logs $service
+          return 1
+        }
+
+        # 检查后端服务
+        health_check "vocata-server" 9010 "/api/actuator/health"
+
+        # 检查前端服务
+        health_check "vocata-web" 3000
+
+        # 检查管理后台
+        health_check "vocata-admin" 3001
+
+        echo "🎉 测试环境部署成功！"
+        EOF
+
+        chmod +x deploy/test/deploy.sh
+
+    - name: 复制文件到测试服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        source: "deploy/test/*"
+        target: "/home/deploy/vocata/"
+        strip_components: 2
+
+    - name: 部署到测试服务器
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        envs: ALIYUN_REGISTRY_USER,ALIYUN_REGISTRY_PASSWORD
+        script: |
+          cd /home/deploy/vocata
+          export ALIYUN_REGISTRY_USER="${{ secrets.ALIYUN_REGISTRY_USER }}"
+          export ALIYUN_REGISTRY_PASSWORD="${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
+          ./deploy.sh
+
+    - name: 发送部署通知
+      if: always()
+      run: |
+        echo "## 测试环境部署结果" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ 测试环境部署成功" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 测试环境部署失败" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📝 测试环境地址：" >> $GITHUB_STEP_SUMMARY
+        echo "- 客户端：https://test.vocata.com" >> $GITHUB_STEP_SUMMARY
+        echo "- 管理后台：https://test-admin.vocata.com" >> $GITHUB_STEP_SUMMARY
+        echo "- API文档：https://test-api.vocata.com/swagger-ui.html" >> $GITHUB_STEP_SUMMARY
+        echo "- 提交：${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # 运行基础健康检查
+  health-check:
+    runs-on: ubuntu-latest
+    needs: deploy-to-test
+    if: success()
+
+    steps:
+    - name: 等待服务稳定
+      run: sleep 60
+
+    - name: 运行健康检查
+      run: |
+        echo "## 测试环境健康检查报告" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # 检查后端API
+        if curl -f "https://test-api.vocata.com/api/actuator/health" > /dev/null 2>&1; then
+          echo "✅ 后端API健康检查通过" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 后端API健康检查失败" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 检查前端客户端
+        if curl -f "https://test.vocata.com" > /dev/null 2>&1; then
+          echo "✅ 前端客户端访问正常" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 前端客户端访问失败" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 检查管理后台
+        if curl -f "https://test-admin.vocata.com" > /dev/null 2>&1; then
+          echo "✅ 管理后台访问正常" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 管理后台访问失败" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🔗 快速访问链接：" >> $GITHUB_STEP_SUMMARY
+        echo "- [客户端](https://test.vocata.com)" >> $GITHUB_STEP_SUMMARY
+        echo "- [管理后台](https://test-admin.vocata.com)" >> $GITHUB_STEP_SUMMARY
+        echo "- [API文档](https://test-api.vocata.com/swagger-ui.html)" >> $GITHUB_STEP_SUMMARY

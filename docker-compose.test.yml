@@ -1,0 +1,165 @@
+# VocaTa测试环境 Docker Compose 配置
+version: '3.8'
+
+x-app-common: &app-common
+  restart: unless-stopped
+  networks:
+    - vocata-network
+  environment:
+    - TZ=Asia/Shanghai
+
+x-healthcheck-web: &healthcheck-web
+  test: ["CMD", "curl", "-f", "http://localhost/"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+
+services:
+  # 后端服务
+  vocata-server:
+    <<: *app-common
+    image: ${SERVER_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-server:test-latest}
+    container_name: vocata-server
+    ports:
+      - "${SERVER_PORT:-9010}:9010"
+    environment:
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-test}
+      - SERVER_PORT=9010
+      # 数据库配置
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Redis配置
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DATABASE=${REDIS_DATABASE:-1}
+      # 七牛云配置
+      - QINIU_ACCESS_KEY=${QINIU_ACCESS_KEY}
+      - QINIU_SECRET_KEY=${QINIU_SECRET_KEY}
+      - QINIU_BUCKET=${QINIU_BUCKET}
+      - QINIU_DOMAIN=${QINIU_DOMAIN}
+      - QINIU_REGION=${QINIU_REGION}
+      # 邮箱配置
+      - EMAIL_USER_NAME=${EMAIL_USER_NAME}
+      - EMAIL_USER_PASSWORD=${EMAIL_USER_PASSWORD}
+      - TZ=Asia/Shanghai
+    volumes:
+      - server-logs:/var/log/vocata
+      - server-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9010/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # 前端客户端
+  vocata-web:
+    <<: *app-common
+    image: ${WEB_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-web:test-latest}
+    container_name: vocata-web
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    volumes:
+      - web-logs:/var/log/nginx
+    healthcheck: *healthcheck-web
+    depends_on:
+      vocata-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # 管理后台
+  vocata-admin:
+    <<: *app-common
+    image: ${ADMIN_IMAGE:-registry.cn-hangzhou.aliyuncs.com/vocata/vocata-admin:test-latest}
+    container_name: vocata-admin
+    ports:
+      - "${ADMIN_PORT:-3001}:80"
+    volumes:
+      - admin-logs:/var/log/nginx
+    healthcheck: *healthcheck-web
+    depends_on:
+      vocata-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # Redis缓存服务
+  redis:
+    <<: *app-common
+    image: redis:7.2-alpine
+    container_name: vocata-redis
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6380}:6379"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+      - redis-logs:/var/log/redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+# 数据卷
+volumes:
+  server-logs:
+    driver: local
+  server-uploads:
+    driver: local
+  web-logs:
+    driver: local
+  admin-logs:
+    driver: local
+  redis-data:
+    driver: local
+  redis-logs:
+    driver: local
+
+# 网络配置
+networks:
+  vocata-network:
+    driver: bridge
+    name: ${COMPOSE_PROJECT_NAME:-vocata-test}-network
