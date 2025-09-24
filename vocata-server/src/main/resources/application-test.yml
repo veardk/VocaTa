@@ -1,7 +1,6 @@
 # 测试环境配置 (前后端联调)
 server:
   port: ${SERVER_PORT:9009}
-  # 测试环境不使用 context-path
 
 spring:
   # 数据源配置
