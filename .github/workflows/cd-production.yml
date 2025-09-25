@@ -177,7 +177,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-server
+        images: ${{ env.REGISTRY }}/veardk/vocata-server
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest
@@ -232,7 +232,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-web
+        images: ${{ env.REGISTRY }}/veardk/vocata-web
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest
@@ -287,7 +287,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.actor }}/vocata-admin
+        images: ${{ env.REGISTRY }}/veardk/vocata-admin
         tags: |
           type=raw,value=${{ needs.prepare-production.outputs.image-tag }}
           type=raw,value=latest
@@ -328,9 +328,9 @@ jobs:
         COMPOSE_PROJECT_NAME=vocata-production
 
         # 镜像配置
-        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:latest', env.REGISTRY, github.actor) }}
-        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:latest', env.REGISTRY, github.actor) }}
-        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:latest', env.REGISTRY, github.actor) }}
+        SERVER_IMAGE=${{ needs.build-server.outputs.image || 'ghcr.io/veardk/vocata-server:latest' }}
+        WEB_IMAGE=${{ needs.build-web.outputs.image || 'ghcr.io/veardk/vocata-web:latest' }}
+        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || 'ghcr.io/veardk/vocata-admin:latest' }}
 
         # 应用配置
         SERVER_PORT=9009
