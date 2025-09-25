@@ -339,33 +339,33 @@ jobs:
         SPRING_PROFILES_ACTIVE=prod
 
         # 数据库配置
-        DB_HOST=${{ secrets.DB_HOST }}
-        DB_PORT=${{ secrets.DB_PORT }}
-        DB_NAME=${{ secrets.DB_NAME }}
-        DB_USERNAME=${{ secrets.DB_USERNAME }}
-        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        DB_HOST="${{ secrets.DB_HOST }}"
+        DB_PORT="${{ secrets.DB_PORT }}"
+        DB_NAME="${{ secrets.DB_NAME }}"
+        DB_USERNAME="${{ secrets.DB_USERNAME }}"
+        DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
         # Redis配置
-        REDIS_HOST=${{ secrets.REDIS_HOST }}
-        REDIS_PORT=${{ secrets.REDIS_PORT }}
-        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        REDIS_HOST="${{ secrets.REDIS_HOST }}"
+        REDIS_PORT="${{ secrets.REDIS_PORT }}"
+        REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
         REDIS_DATABASE=0
 
         # 七牛云配置
-        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
-        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
-        QINIU_BUCKET=${{ secrets.QINIU_BUCKET }}
-        QINIU_DOMAIN=${{ secrets.QINIU_DOMAIN }}
-        QINIU_REGION=${{ secrets.QINIU_REGION }}
+        QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
+        QINIU_SECRET_KEY="${{ secrets.QINIU_SECRET_KEY }}"
+        QINIU_BUCKET="${{ secrets.QINIU_BUCKET }}"
+        QINIU_DOMAIN="${{ secrets.QINIU_DOMAIN }}"
+        QINIU_REGION="${{ secrets.QINIU_REGION }}"
 
         # 邮箱配置
-        EMAIL_USER_NAME=${{ secrets.EMAIL_USER_NAME }}
-        EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
+        EMAIL_USER_NAME="${{ secrets.EMAIL_USER_NAME }}"
+        EMAIL_USER_PASSWORD="${{ secrets.EMAIL_USER_PASSWORD }}"
 
         # 部署信息
-        DEPLOY_VERSION=${{ needs.prepare-production.outputs.version }}
-        DEPLOY_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-        DEPLOY_COMMIT=${{ github.sha }}
+        DEPLOY_VERSION="${{ needs.prepare-production.outputs.version }}"
+        DEPLOY_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
+        DEPLOY_COMMIT="${{ github.sha }}"
         EOF
 
         # 复制 docker-compose 配置
