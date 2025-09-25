@@ -15,7 +15,7 @@
           <el-form class="form">
             <template v-if="activeTab === 'login'">
               <el-input
-                v-model="loginform.username"
+                v-model="loginform.loginName"
                 placeholder="请输入用户名"
                 size="large"
               ></el-input>
@@ -26,12 +26,19 @@
                 type="password"
                 size="large"
               ></el-input>
-              <el-checkbox v-model="loginform.remember" label="记住我"></el-checkbox>
-              <div class="confirm">登录</div>
+              <el-checkbox v-model="loginform.rememberMe" label="记住我"></el-checkbox>
+              <div
+                class="confirm"
+                @click="login"
+                v-loading.fullscreen.lock="fullscreenLoading"
+                element-loading-text="请稍后..."
+              >
+                登录
+              </div>
             </template>
             <template v-if="activeTab === 'register'">
               <el-input
-                v-model="registerform.username"
+                v-model="registerform.nickname"
                 placeholder="请输入用户名"
                 size="large"
               ></el-input>
@@ -47,21 +54,27 @@
                 size="large"
               ></el-input>
               <el-input
-                v-model="registerform.password2"
+                v-model="registerform.confirmPassword"
                 placeholder="请确认密码"
                 type="password"
                 size="large"
               ></el-input>
-              <el-input v-model="validCode" placeholder="请输入验证码" size="large">
+              <el-input
+                v-model="registerform.verificationCode"
+                placeholder="请输入验证码"
+                size="large"
+              >
                 <template #append>
-                  <el-button>{{ validText }}</el-button>
+                  <el-button @click="sendCode" :disabled="validDisabled">
+                    {{ validText }}
+                  </el-button>
                 </template>
               </el-input>
               <el-checkbox
-                v-model="registerform.remember"
+                v-model="registerform.hasRead"
                 label="我已阅读并同意用户协议和隐私政策"
               ></el-checkbox>
-              <div class="confirm">注册</div>
+              <div class="confirm" @click="register">注册</div>
             </template>
           </el-form>
         </div>
@@ -72,28 +85,115 @@
 </template>
 
 <script setup lang="ts">
+import { userApi } from '@/api/modules/user'
+import type { LoginParams, RegisterParams } from '@/types/api'
 import { isMobile } from '@/utils/isMobile'
-import { computed, ref } from 'vue'
+import { setToken } from '@/utils/token'
+import { ElMessage } from 'element-plus'
+import { computed, ref, type Ref } from 'vue'
+import { useRouter } from 'vue-router'
 const isM = computed(() => isMobile())
-
+const router = useRouter()
 const activeTab = ref('login')
-const loginform = ref({
-  username: '',
+const loginform: Ref<LoginParams> = ref({
+  loginName: '',
   password: '',
-  remember: false,
+  rememberMe: false,
 })
-const registerform = ref({
-  username: '',
+let timeout = 60
+const registerform: Ref<RegisterParams> = ref({
+  nickname: '',
   password: '',
-  password2: '',
+  confirmPassword: '',
   email: '',
-  remember: false,
+  verificationCode: '',
+  gender: 0,
+  hasRead: false,
 })
-const validCode = ref('')
+
 const validText = ref('发送')
+const validDisabled = ref(false)
+const fullscreenLoading = ref(false)
+const login = async () => {
+  if (!loginform.value.loginName) {
+    ElMessage.error('请输入用户名')
+    return
+  }
+  if (!loginform.value.password) {
+    ElMessage.error('请输入密码')
+    return
+  }
+  try {
+    fullscreenLoading.value = true
+    const res = await userApi.login(loginform.value)
+    if (res.code == 200 && res.data) {
+      setToken(res.data.token, res.data.expiresIn)
+      ElMessage.success('登录成功')
+      router.push('/')
+    } else {
+      ElMessage.error(res.message)
+    }
+  } catch (error) {
+    console.log(error)
+  } finally {
+    fullscreenLoading.value = false
+  }
+}
+const sendCode = async () => {
+  if (!registerform.value.nickname) {
+    ElMessage.error('请输入用户名')
+    return
+  }
+  if (!registerform.value.email) {
+    ElMessage.error('请输入邮箱')
+    return
+  }
+  if (!registerform.value.password) {
+    ElMessage.error('请输入密码')
+    return
+  }
+  if (!registerform.value.confirmPassword) {
+    ElMessage.error('请确认密码')
+    return
+  }
+  if (registerform.value.password !== registerform.value.confirmPassword) {
+    ElMessage.error('两次密码不一致')
+    return
+  }
+  try {
+    const res = await userApi.sendCode(registerform.value.email)
+    if (res.code == 200) {
+      ElMessage.success('验证码发送成功')
+      validDisabled.value = true
+    }
+    const timer = setInterval(() => {
+      validText.value = timeout + 's后重新发送'
+      timeout -= 1
+      if (timeout == 0) {
+        validText.value = '发送'
+        validDisabled.value = false
+        clearInterval(timer)
+      }
+    }, 1000)
+  } catch (error) {
+    console.log(error)
+    validText.value = '发送'
+    validDisabled.value = false
+  }
+}
+const register = async () => {
+  if (!registerform.value.verificationCode) {
+    ElMessage.error('请输入验证码')
+    return
+  }
+  if (!registerform.value.hasRead) {
+    ElMessage.error('请阅读并同意用户协议和隐私政策')
+    return
+  }
+}
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .login-page {
   width: 100%;
   height: 100vh;
@@ -172,7 +272,9 @@ const validText = ref('发送')
       flex-direction: column;
       justify-content: center;
       padding: 0.15rem 0.7rem;
-
+      :deep(.el-input__inner) {
+        font-size: 0.16rem;
+      }
       .el-input {
         margin-top: 0.3rem;
       }

@@ -34,7 +34,7 @@ const toggleSidebar = () => {
 }
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .main-layout {
   display: flex;
   height: 100vh;

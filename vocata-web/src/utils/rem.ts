@@ -1,12 +1,14 @@
 (function () {
   function setRem() {
     const width = document.documentElement.clientWidth
-    // 移动端（≤768px）：基于375px设计稿
+
     if (width <= 768) {
+      // 移动端：基于375px设计稿，1rem = 100px
       document.documentElement.style.fontSize = (width / 375 * 100) + 'px'
     } else {
-      // PC端（>768px）：基于1920px设计稿
-      document.documentElement.style.fontSize = (width / 1920 * 100) + 'px'
+      // PC端：基于1920px设计稿，1rem = 100px
+      const fontSize = Math.min(width / 1920 * 100, 100) // 限制最大字体大小
+      document.documentElement.style.fontSize = fontSize + 'px'
     }
   }
 

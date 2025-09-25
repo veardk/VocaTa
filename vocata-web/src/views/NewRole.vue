@@ -9,7 +9,7 @@ const pc = computed(() => isMobile())
 // 这里可以放全局逻辑
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .main-container {
   padding: 0.3rem 0.5rem;
 }

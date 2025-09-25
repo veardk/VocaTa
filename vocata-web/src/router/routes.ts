@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '新建角色'
         }
+      }, {
+        path: '/chat/:id',
+        component: () => import('@/views/ChatPage.vue'),
+        meta: {
+          title: '对话'
+        }
       }
     ]
   },
@@ -30,4 +36,5 @@ const routes: RouteRecordRaw[] = [
     }
   }
 ]
+
 export default routes
