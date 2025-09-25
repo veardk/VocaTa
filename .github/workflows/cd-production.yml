@@ -414,13 +414,16 @@ jobs:
         for service in "${SERVICES_TO_UPDATE[@]}"; do
           case $service in
             "vocata-server")
-              docker pull $SERVER_IMAGE
+              echo "拉取后端镜像: $SERVER_IMAGE"
+              docker pull "$SERVER_IMAGE"
               ;;
             "vocata-web")
-              docker pull $WEB_IMAGE
+              echo "拉取前端镜像: $WEB_IMAGE"
+              docker pull "$WEB_IMAGE"
               ;;
             "vocata-admin")
-              docker pull $ADMIN_IMAGE
+              echo "拉取管理后台镜像: $ADMIN_IMAGE"
+              docker pull "$ADMIN_IMAGE"
               ;;
           esac
         done
