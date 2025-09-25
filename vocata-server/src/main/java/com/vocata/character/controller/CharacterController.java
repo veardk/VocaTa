@@ -14,10 +14,13 @@ import com.vocata.common.constant.CharacterStatus;
 import com.vocata.common.result.ApiResponse;
 import com.vocata.common.result.PageResult;
 import com.vocata.common.utils.UserContext;
+import com.vocata.file.dto.FileUploadResponse;
+import com.vocata.file.service.FileService;
 import jakarta.validation.Valid;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,6 +36,20 @@ public class CharacterController {
 
     @Autowired
     private CharacterService characterService;
+
+    @Autowired
+    private FileService fileService;
+
+    /**
+     * 上传角色头像（需要登录）
+     * POST /api/client/character/upload-avatar
+     */
+    @PostMapping("/upload-avatar")
+    @SaCheckLogin
+    public ApiResponse<FileUploadResponse> uploadAvatar(@RequestParam("file") MultipartFile file) {
+        FileUploadResponse response = fileService.uploadFile(file, "character-avatar");
+        return ApiResponse.success("头像上传成功", response);
+    }
 
     /**
      * 创建角色（需要登录）

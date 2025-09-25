@@ -98,12 +98,31 @@ public class CharacterOpenController {
     }
 
     /**
-     * 根据角色编码获取角色详情
-     * GET /api/open/character/{characterCode}
+     * 根据角色编码或ID获取角色详情
+     * GET /api/open/character/{characterCodeOrId}
+     * 支持传入角色编码(string)或角色ID(数字)
      */
-    @GetMapping("/{characterCode}")
-    public ApiResponse<CharacterDetailResponse> getCharacterByCode(@PathVariable String characterCode) {
-        Character character = characterService.getByCharacterCode(characterCode);
+    @GetMapping("/{characterCodeOrId}")
+    public ApiResponse<CharacterDetailResponse> getCharacterByCodeOrId(@PathVariable String characterCodeOrId) {
+        Character character = null;
+
+        // 首先尝试按ID查找（如果传入的是数字）
+        try {
+            Long id = Long.parseLong(characterCodeOrId);
+            character = characterService.getById(id);
+            // 确保角色已发布
+            if (character != null && character.getStatus() != CharacterStatus.PUBLISHED) {
+                character = null;
+            }
+        } catch (NumberFormatException e) {
+            // 不是数字，忽略异常继续按编码查找
+        }
+
+        // 如果按ID未找到，尝试按角色编码查找
+        if (character == null) {
+            character = characterService.getByCharacterCode(characterCodeOrId);
+        }
+
         if (character == null) {
             throw new BizException(ApiCode.DATA_NOT_FOUND, "角色不存在");
         }
