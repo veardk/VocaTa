@@ -52,9 +52,12 @@ public interface CharacterService {
      * @param status 角色状态，null表示不过滤
      * @param isFeatured 是否精选，null表示不过滤
      * @param tags 标签列表，null表示不过滤
+     * @param orderBy 排序字段
+     * @param orderDirection 排序方向
      * @return 角色分页列表
      */
-    IPage<Character> getPublicCharacters(Page<Character> page, Integer status, Integer isFeatured, List<String> tags);
+    IPage<Character> getPublicCharacters(Page<Character> page, Integer status, Integer isFeatured,
+                                       List<String> tags, String orderBy, String orderDirection);
 
     /**
      * 分页查询用户创建的角色列表

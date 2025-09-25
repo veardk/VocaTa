@@ -53,7 +53,9 @@ public class CharacterController {
                 page,
                 CharacterStatus.PUBLISHED, // 只返回已发布的
                 request.getIsFeatured(),
-                request.getTags()
+                request.getTags(),
+                request.getOrderBy(),
+                request.getOrderDirection()
         );
 
         List<CharacterResponse> responseList = result.getRecords().stream()
