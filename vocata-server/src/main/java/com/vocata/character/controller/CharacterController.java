@@ -15,12 +15,14 @@ import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.common.result.ApiResponse;
 import com.vocata.common.result.PageResult;
+import com.vocata.common.utils.JsonFieldUtil;
 import com.vocata.common.utils.UserContext;
 import jakarta.validation.Valid;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -41,7 +43,11 @@ public class CharacterController {
      */
     @GetMapping("/public")
     public ApiResponse<PageResult<CharacterResponse>> getPublicCharacters(CharacterSearchRequest request) {
-        Page<Character> page = new Page<>(request.getPageNum(), request.getPageSize());
+        // 防止空指针异常，设置默认值
+        int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+
+        Page<Character> page = new Page<>(pageNum, pageSize);
 
         IPage<Character> result = characterService.getPublicCharacters(
                 page,
@@ -50,11 +56,16 @@ public class CharacterController {
                 request.getTags()
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -65,7 +76,11 @@ public class CharacterController {
      */
     @GetMapping("/search")
     public ApiResponse<PageResult<CharacterResponse>> searchCharacters(CharacterSearchRequest request) {
-        Page<Character> page = new Page<>(request.getPageNum(), request.getPageSize());
+        // 防止空指针异常，设置默认值
+        int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+
+        Page<Character> page = new Page<>(pageNum, pageSize);
 
         IPage<Character> result = characterService.searchCharacters(
                 page,
@@ -73,11 +88,16 @@ public class CharacterController {
                 CharacterStatus.PUBLISHED // 只搜索已发布的
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -135,6 +155,11 @@ public class CharacterController {
         Character character = new Character();
         BeanUtils.copyProperties(request, character);
 
+        // 设置默认值
+        if (character.getTemperature() == null) {
+            character.setTemperature(new BigDecimal("0.7"));
+        }
+
         Character created = characterService.create(character);
         CharacterDetailResponse response = convertToDetailResponse(created);
 
@@ -180,7 +205,11 @@ public class CharacterController {
     @SaCheckLogin
     public ApiResponse<PageResult<CharacterResponse>> getMyCharacters(CharacterSearchRequest request) {
         Long currentUserId = UserContext.getUserId();
-        Page<Character> page = new Page<>(request.getPageNum(), request.getPageSize());
+        // 防止空指针异常，设置默认值
+        int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+
+        Page<Character> page = new Page<>(pageNum, pageSize);
 
         IPage<Character> result = characterService.getCharactersByCreator(
                 page,
@@ -188,11 +217,16 @@ public class CharacterController {
                 request.getStatus()
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -204,6 +238,8 @@ public class CharacterController {
         CharacterResponse response = new CharacterResponse();
         BeanUtils.copyProperties(character, response);
         response.setStatusName(CharacterStatus.getStatusName(character.getStatus()));
+        response.setCreatedAt(character.getCreateDate());
+        response.setUpdatedAt(character.getUpdateDate());
         return response;
     }
 
@@ -214,6 +250,8 @@ public class CharacterController {
         CharacterDetailResponse response = new CharacterDetailResponse();
         BeanUtils.copyProperties(character, response);
         response.setStatusName(CharacterStatus.getStatusName(character.getStatus()));
+        response.setCreatedAt(character.getCreateDate());
+        response.setUpdatedAt(character.getUpdateDate());
         return response;
     }
 }

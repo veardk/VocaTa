@@ -1,10 +1,9 @@
 package com.vocata.character.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.vocata.character.dto.request.CharacterSearchRequest;
-import com.vocata.character.dto.request.CharacterUpdateRequest;
+import com.vocata.character.dto.request.CharacterAdminUpdateRequest;
 import com.vocata.character.dto.response.CharacterDetailResponse;
 import com.vocata.character.dto.response.CharacterResponse;
 import com.vocata.character.entity.Character;
@@ -14,6 +13,7 @@ import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.common.result.ApiResponse;
 import com.vocata.common.result.PageResult;
+import com.vocata.common.utils.UserContext;
 import jakarta.validation.Valid;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +29,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/admin/character")
-@SaCheckRole("admin")
 public class CharacterAdminController {
 
     @Autowired
@@ -41,7 +40,11 @@ public class CharacterAdminController {
      */
     @GetMapping
     public ApiResponse<PageResult<CharacterResponse>> getAllCharacters(CharacterSearchRequest request) {
-        Page<Character> page = new Page<>(request.getPageNum(), request.getPageSize());
+        // 防止空指针异常，设置默认值
+        int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+
+        Page<Character> page = new Page<>(pageNum, pageSize);
 
         IPage<Character> result = characterService.getPublicCharacters(
                 page,
@@ -50,11 +53,16 @@ public class CharacterAdminController {
                 request.getTags()
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -111,7 +119,8 @@ public class CharacterAdminController {
             }
         }
 
-        return ApiResponse.success(String.format("成功更新 %d/%d 个角色状态", successCount, ids.size()));
+        String statusName = CharacterStatus.getStatusName(status);
+        return ApiResponse.success(String.format("成功将 %d/%d 个角色状态更新为：%s", successCount, ids.size(), statusName));
     }
 
     /**
@@ -122,6 +131,17 @@ public class CharacterAdminController {
     public ApiResponse<Void> setFeatured(
             @PathVariable Long id,
             @RequestParam Integer isFeatured) {
+
+        // 如果要设置为精选，需要检查角色是否已发布
+        if (isFeatured == 1) {
+            Character currentCharacter = characterService.getById(id);
+            if (currentCharacter == null) {
+                throw new BizException(ApiCode.DATA_NOT_FOUND, "角色不存在");
+            }
+            if (currentCharacter.getStatus() != CharacterStatus.PUBLISHED) {
+                throw new BizException(ApiCode.PARAM_ERROR, "只有已发布的角色才能设置为精选");
+            }
+        }
 
         Character character = new Character();
         character.setId(id);
@@ -164,7 +184,7 @@ public class CharacterAdminController {
     @GetMapping("/pending-review")
     public ApiResponse<PageResult<CharacterResponse>> getPendingReviewCharacters(
             @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "20") Integer pageSize) {
+            @RequestParam(defaultValue = "10") Integer pageSize) {
 
         Page<Character> page = new Page<>(pageNum, pageSize);
 
@@ -175,11 +195,16 @@ public class CharacterAdminController {
                 null
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -190,7 +215,11 @@ public class CharacterAdminController {
      */
     @GetMapping("/search")
     public ApiResponse<PageResult<CharacterResponse>> searchCharacters(CharacterSearchRequest request) {
-        Page<Character> page = new Page<>(request.getPageNum(), request.getPageSize());
+        // 防止空指针异常，设置默认值
+        int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+
+        Page<Character> page = new Page<>(pageNum, pageSize);
 
         IPage<Character> result = characterService.searchCharacters(
                 page,
@@ -198,35 +227,45 @@ public class CharacterAdminController {
                 request.getStatus() // 管理员可以搜索任何状态的角色
         );
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
 
     /**
      * 根据创建者查询角色
-     * GET /api/admin/character/creator/{creatorId}
+     * GET /api/admin/character/creator/{createId}
      */
-    @GetMapping("/creator/{creatorId}")
+    @GetMapping("/creator/{createId}")
     public ApiResponse<PageResult<CharacterResponse>> getCharactersByCreator(
-            @PathVariable Long creatorId,
+            @PathVariable Long createId,
             @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "20") Integer pageSize,
+            @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer status) {
 
         Page<Character> page = new Page<>(pageNum, pageSize);
 
-        IPage<Character> result = characterService.getCharactersByCreator(page, creatorId, status);
+        IPage<Character> result = characterService.getCharactersByCreator(page, createId, status);
 
-        PageResult<CharacterResponse> pageResult = new PageResult<>();
-        pageResult.setTotal(result.getTotal());
-        pageResult.setRecords(result.getRecords().stream()
+        List<CharacterResponse> responseList = result.getRecords().stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        PageResult<CharacterResponse> pageResult = PageResult.of(
+                pageNum,
+                pageSize,
+                result.getTotal(),
+                responseList
+        );
 
         return ApiResponse.success(pageResult);
     }
@@ -238,7 +277,7 @@ public class CharacterAdminController {
     @PutMapping("/{id}")
     public ApiResponse<CharacterDetailResponse> updateCharacter(
             @PathVariable Long id,
-            @Valid @RequestBody CharacterUpdateRequest request) {
+            @Valid @RequestBody CharacterAdminUpdateRequest request) {
 
         Character character = new Character();
         BeanUtils.copyProperties(request, character);
@@ -267,6 +306,8 @@ public class CharacterAdminController {
         CharacterResponse response = new CharacterResponse();
         BeanUtils.copyProperties(character, response);
         response.setStatusName(CharacterStatus.getStatusName(character.getStatus()));
+        response.setCreatedAt(character.getCreateDate());
+        response.setUpdatedAt(character.getUpdateDate());
         return response;
     }
 
@@ -277,6 +318,8 @@ public class CharacterAdminController {
         CharacterDetailResponse response = new CharacterDetailResponse();
         BeanUtils.copyProperties(character, response);
         response.setStatusName(CharacterStatus.getStatusName(character.getStatus()));
+        response.setCreatedAt(character.getCreateDate());
+        response.setUpdatedAt(character.getUpdateDate());
         return response;
     }
 }
