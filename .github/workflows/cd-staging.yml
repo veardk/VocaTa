@@ -257,9 +257,9 @@ jobs:
         COMPOSE_PROJECT_NAME=vocata-staging
 
         # 镜像配置
-        SERVER_IMAGE="${{ needs.build-server.outputs.image || 'ghcr.io/veardk/vocata-server:staging-latest' }}"
-        WEB_IMAGE="${{ needs.build-web.outputs.image || 'ghcr.io/veardk/vocata-web:staging-latest' }}"
-        ADMIN_IMAGE="${{ needs.build-admin.outputs.image || 'ghcr.io/veardk/vocata-admin:staging-latest' }}"
+        SERVER_IMAGE="ghcr.io/veardk/vocata-server:staging-${{ needs.detect-changes.outputs.image-tag }}"
+        WEB_IMAGE="ghcr.io/veardk/vocata-web:staging-${{ needs.detect-changes.outputs.image-tag }}"
+        ADMIN_IMAGE="ghcr.io/veardk/vocata-admin:staging-${{ needs.detect-changes.outputs.image-tag }}"
 
         # 应用配置
         SERVER_PORT=9009
