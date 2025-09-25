@@ -1,6 +1,8 @@
 package com.vocata.character.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,6 +15,7 @@ public class CharacterResponse {
     /**
      * 角色ID
      */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /**
@@ -83,6 +86,7 @@ public class CharacterResponse {
     /**
      * 总对话次数
      */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long chatCount;
 
     /**
@@ -98,7 +102,8 @@ public class CharacterResponse {
     /**
      * 创建者用户ID
      */
-    private Long creatorId;
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long createId;
 
     /**
      * 创建时间
@@ -249,12 +254,12 @@ public class CharacterResponse {
         this.isPrivate = isPrivate;
     }
 
-    public Long getCreatorId() {
-        return creatorId;
+    public Long getCreateId() {
+        return createId;
     }
 
-    public void setCreatorId(Long creatorId) {
-        this.creatorId = creatorId;
+    public void setCreateId(Long createId) {
+        this.createId = createId;
     }
 
     public LocalDateTime getCreatedAt() {

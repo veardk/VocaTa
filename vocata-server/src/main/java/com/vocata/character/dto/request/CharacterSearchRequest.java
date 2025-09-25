@@ -1,5 +1,7 @@
 package com.vocata.character.dto.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.vocata.common.config.LongDeserializer;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
@@ -43,7 +45,8 @@ public class CharacterSearchRequest {
     /**
      * 创建者ID（仅管理员和用户查看自己的角色时使用）
      */
-    private Long creatorId;
+    @JsonDeserialize(using = LongDeserializer.class)
+    private Long createId;
 
     /**
      * 页码
@@ -56,7 +59,7 @@ public class CharacterSearchRequest {
      */
     @Min(value = 1, message = "每页数量最小为1")
     @Max(value = 100, message = "每页数量最大为100")
-    private Integer pageSize = 20;
+    private Integer pageSize = 10;
 
     /**
      * 排序字段：created_at, updated_at, chat_count, trending_score, sort_weight
@@ -117,12 +120,12 @@ public class CharacterSearchRequest {
         this.language = language;
     }
 
-    public Long getCreatorId() {
-        return creatorId;
+    public Long getCreateId() {
+        return createId;
     }
 
-    public void setCreatorId(Long creatorId) {
-        this.creatorId = creatorId;
+    public void setCreateId(Long createId) {
+        this.createId = createId;
     }
 
     public Integer getPageNum() {
