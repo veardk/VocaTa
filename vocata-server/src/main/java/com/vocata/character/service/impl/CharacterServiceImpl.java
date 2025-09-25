@@ -87,7 +87,7 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
         // 设置创建者
         Long currentUserId = UserContext.getUserId();
         if (currentUserId != null) {
-            character.setCreatorId(currentUserId);
+            character.setCreateId(currentUserId);
         }
 
         character.setCreateDate(LocalDateTime.now());
@@ -167,13 +167,13 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     }
 
     @Override
-    public IPage<Character> getCharactersByCreator(Page<Character> page, Long creatorId, Integer status) {
-        if (creatorId == null) {
+    public IPage<Character> getCharactersByCreator(Page<Character> page, Long createId, Integer status) {
+        if (createId == null) {
             throw new BizException(ApiCode.PARAM_ERROR);
         }
 
         LambdaQueryWrapper<Character> wrapper = new LambdaQueryWrapper<Character>()
-                .eq(Character::getCreatorId, creatorId)
+                .eq(Character::getCreateId, createId)
                 .orderByDesc(Character::getUpdateDate);
 
         if (status != null) {
@@ -267,7 +267,7 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
 
         // 检查是否是角色创建者
         Character character = this.getById(characterId);
-        if (character != null && userId.equals(character.getCreatorId())) {
+        if (character != null && userId.equals(character.getCreateId())) {
             return true;
         }
 
