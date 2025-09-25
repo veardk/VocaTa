@@ -446,8 +446,9 @@ jobs:
         username: ${{ secrets.STAGING_USER }}
         key: ${{ secrets.STAGING_SSH_KEY }}
         port: 22
-        source: "deploy/staging/."
+        source: "deploy/staging/*"
         target: "~/deploy/vocata"
+        strip_components: 2
         rm: true
 
     - name: 执行部署
