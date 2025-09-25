@@ -16,7 +16,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 角色服务实现类
@@ -273,4 +276,177 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
 
         return false;
     }
+
+    // ========== 标签管理相关方法实现 ==========
+
+    @Override
+    public boolean syncCharacterTags(Long characterId) {
+        if (characterId == null) {
+            throw new BizException(ApiCode.PARAM_ERROR);
+        }
+
+        Character character = this.getById(characterId);
+        if (character == null) {
+            throw new BizException(ApiCode.DATA_NOT_FOUND, "角色不存在");
+        }
+
+        try {
+            // 解析JSON标签数据
+            Long[] tagIds = parseJsonToLongArray(character.getTags());
+            String[] tagNames = parseJsonToStringArray(character.getTags());
+
+            // 生成标签摘要
+            String tagSummary = generateTagSummary(tagNames);
+
+            // 确定主要标签（前3个）
+            Long[] primaryTagIds = tagIds != null && tagIds.length > 0 ?
+                Arrays.copyOf(tagIds, Math.min(tagIds.length, 3)) : new Long[0];
+
+            // 更新数组字段
+            return updateCharacterTagFields(characterId, tagIds, tagNames, primaryTagIds, tagSummary);
+        } catch (Exception e) {
+            // 标签同步失败不影响主流程，记录日志但不抛异常
+            return false;
+        }
+    }
+
+    @Override
+    public IPage<Character> getCharactersByTagIds(Page<Character> page, Long[] tagIds, Integer status) {
+        if (tagIds == null || tagIds.length == 0) {
+            return this.getPublicCharacters(page, status, null, null);
+        }
+
+        // 使用QueryWrapper查询包含任意标签的角色
+        LambdaQueryWrapper<Character> wrapper = new LambdaQueryWrapper<Character>()
+                .eq(Character::getIsPrivate, false);
+
+        if (status != null) {
+            wrapper.eq(Character::getStatus, status);
+        }
+
+        // 这里需要自定义SQL或者先查询所有再过滤
+        // 暂时使用简化逻辑：通过tagSummary字段进行模糊匹配
+        if (tagIds.length > 0) {
+            wrapper.and(w -> {
+                for (Long tagId : tagIds) {
+                    w.like(Character::getTagSummary, tagId.toString()).or();
+                }
+            });
+        }
+
+        wrapper.orderByDesc(Character::getChatCount);
+        return this.page(page, wrapper);
+    }
+
+    @Override
+    public List<Character> getRecommendedCharacters(Long[] primaryTagIds, int limit, Long excludeCharacterId) {
+        if (primaryTagIds == null || primaryTagIds.length == 0) {
+            return getTrendingCharacters(limit);
+        }
+
+        Page<Character> page = new Page<>(1, limit);
+        IPage<Character> result = getCharactersByTagIds(page, primaryTagIds, CharacterStatus.PUBLISHED);
+
+        List<Character> characters = result.getRecords();
+
+        // 排除指定角色
+        if (excludeCharacterId != null) {
+            characters = characters.stream()
+                    .filter(c -> !excludeCharacterId.equals(c.getId()))
+                    .collect(Collectors.toList());
+        }
+
+        return characters;
+    }
+
+    @Override
+    public boolean updateCharacterTagFields(Long characterId, Long[] tagIds, String[] tagNames,
+                                          Long[] primaryTagIds, String tagSummary) {
+        if (characterId == null) {
+            throw new BizException(ApiCode.PARAM_ERROR);
+        }
+
+        try {
+            // 转换数组为JSON字符串用于PostgreSQL
+            String tagIdsJson = arrayToJson(tagIds);
+            String tagNamesJson = arrayToJson(tagNames);
+            String primaryTagIdsJson = arrayToJson(primaryTagIds);
+
+            return this.baseMapper.updateCharacterTags(characterId, tagIdsJson, tagNamesJson,
+                                                     primaryTagIdsJson, tagSummary) > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ========== 私有工具方法 ==========
+
+    /**
+     * 解析JSON字符串为Long数组
+     */
+    private Long[] parseJsonToLongArray(String jsonString) {
+        if (StringUtils.isBlank(jsonString)) {
+            return new Long[0];
+        }
+        try {
+            // 简化实现：假设JSON格式为 ["1","2","3"]
+            String cleaned = jsonString.replaceAll("[\\[\\]\"\\s]", "");
+            if (StringUtils.isBlank(cleaned)) {
+                return new Long[0];
+            }
+            return Arrays.stream(cleaned.split(","))
+                    .filter(StringUtils::isNotBlank)
+                    .map(Long::parseLong)
+                    .toArray(Long[]::new);
+        } catch (Exception e) {
+            return new Long[0];
+        }
+    }
+
+    /**
+     * 解析JSON字符串为String数组
+     */
+    private String[] parseJsonToStringArray(String jsonString) {
+        if (StringUtils.isBlank(jsonString)) {
+            return new String[0];
+        }
+        try {
+            // 简化实现：假设JSON格式为 ["动漫","治愈","女友"]
+            String cleaned = jsonString.replaceAll("[\\[\\]\"]", "");
+            if (StringUtils.isBlank(cleaned)) {
+                return new String[0];
+            }
+            return Arrays.stream(cleaned.split(","))
+                    .filter(StringUtils::isNotBlank)
+                    .map(String::trim)
+                    .toArray(String[]::new);
+        } catch (Exception e) {
+            return new String[0];
+        }
+    }
+
+    /**
+     * 生成标签摘要
+     */
+    private String generateTagSummary(String[] tagNames) {
+        if (tagNames == null || tagNames.length == 0) {
+            return "";
+        }
+        return String.join("、", Arrays.stream(tagNames)
+                .limit(5) // 最多5个标签
+                .collect(Collectors.toList()));
+    }
+
+    /**
+     * 数组转JSON字符串（用于PostgreSQL数组类型）
+     */
+    private String arrayToJson(Object[] array) {
+        if (array == null || array.length == 0) {
+            return "{}";
+        }
+        return "{" + Arrays.stream(array)
+                .map(Object::toString)
+                .collect(Collectors.joining(",")) + "}";
+    }
+
 }

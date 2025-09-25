@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * 路径前缀: /api/client/character
  */
 @RestController
-@RequestMapping("/client/character")
+@RequestMapping("/api/client/character")
 public class CharacterController {
 
     @Autowired
