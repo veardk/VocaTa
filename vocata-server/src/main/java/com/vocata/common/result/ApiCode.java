@@ -16,6 +16,7 @@ public enum ApiCode {
 
     // 通用错误码 (1000-1099)
     PARAM_ERROR(1001, "请求参数错误"),
+    INVALID_PARAM(1001, "参数无效"),
     VALIDATE_FAILED(1002, "参数验证失败"),
     DATA_NOT_FOUND(1003, "数据不存在"),
     DATA_ALREADY_EXISTS(1004, "数据已存在"),
