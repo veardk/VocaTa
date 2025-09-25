@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -89,6 +90,16 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleNotPermissionException(NotPermissionException e) {
         log.error("权限不足异常: {}", e.getMessage());
         return ApiResponse.error(ApiCode.FORBIDDEN.getCode(), "权限不足");
+    }
+
+    /**
+     * 文件上传大小超限异常处理
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+        log.error("文件上传大小超限: {}", e.getMessage());
+        return ApiResponse.error(ApiCode.PARAM_ERROR.getCode(), "头像文件大小不能超过1MB，请选择更小的图片");
     }
 
     /**
