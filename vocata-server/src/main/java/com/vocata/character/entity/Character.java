@@ -1,9 +1,10 @@
 package com.vocata.character.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.vocata.common.entity.BaseEntity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -11,15 +12,32 @@ import java.time.LocalDateTime;
 /**
  * 角色实体类
  * 对应数据库表：vocata_character
+ * 注意：不继承BaseEntity，因为字段映射规则不同
  */
 @TableName("vocata_character")
-public class Character extends BaseEntity {
+public class Character {
 
     /**
      * 角色ID
      */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
+
+    /**
+     * 审计字段 - 映射到实际数据库字段
+     */
+    @TableField("create_id")
+    private Long createId;
+
+    @TableField("created_at")
+    private LocalDateTime createDate;
+
+    @TableField("updated_at")
+    private LocalDateTime updateDate;
+
+    @TableLogic
+    @TableField("is_delete")
+    private Integer isDelete;
 
     /**
      * 角色唯一编码，用于URL等
@@ -159,7 +177,7 @@ public class Character extends BaseEntity {
     /**
      * 创建者用户ID，官方默认NULL
      */
-    private Long creatorId;
+//    private Long createId;
 
     /**
      * 是否私有：false=公开 true=私有
@@ -391,12 +409,12 @@ public class Character extends BaseEntity {
         this.sortWeight = sortWeight;
     }
 
-    public Long getCreatorId() {
-        return creatorId;
+    public Long getCreateId() {
+        return createId;
     }
 
-    public void setCreatorId(Long creatorId) {
-        this.creatorId = creatorId;
+    public void setCreateId(Long createId) {
+        this.createId = createId;
     }
 
     public Boolean getIsPrivate() {
@@ -405,6 +423,31 @@ public class Character extends BaseEntity {
 
     public void setIsPrivate(Boolean isPrivate) {
         this.isPrivate = isPrivate;
+    }
+
+    // 审计字段的getter和setter方法
+    public LocalDateTime getCreateDate() {
+        return createDate;
+    }
+
+    public void setCreateDate(LocalDateTime createDate) {
+        this.createDate = createDate;
+    }
+
+    public LocalDateTime getUpdateDate() {
+        return updateDate;
+    }
+
+    public void setUpdateDate(LocalDateTime updateDate) {
+        this.updateDate = updateDate;
+    }
+
+    public Integer getIsDelete() {
+        return isDelete;
+    }
+
+    public void setIsDelete(Integer isDelete) {
+        this.isDelete = isDelete;
     }
 
 }

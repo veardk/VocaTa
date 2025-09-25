@@ -59,11 +59,11 @@ public interface CharacterService {
     /**
      * 分页查询用户创建的角色列表
      * @param page 分页参数
-     * @param creatorId 创建者ID
+     * @param createId 创建者ID
      * @param status 角色状态，null表示不过滤
      * @return 角色分页列表
      */
-    IPage<Character> getCharactersByCreator(Page<Character> page, Long creatorId, Integer status);
+    IPage<Character> getCharactersByCreator(Page<Character> page, Long createId, Integer status);
 
     /**
      * 全文搜索角色
