@@ -384,7 +384,7 @@ jobs:
         source .env
 
         # 登录 Docker Registry
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "veardk" --password-stdin
 
         # 确定需要更新的服务
         SERVICES_TO_UPDATE=()
@@ -535,7 +535,7 @@ jobs:
 
         chmod +x deploy/production/deploy.sh
 
-    - name: 创建远程目录并复制文件
+    - name: 创建远程目录
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.PRODUCTION_HOST }}
@@ -543,8 +543,8 @@ jobs:
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
         script: |
-          mkdir -p /home/deploy/vocata
-          chmod 755 /home/deploy/vocata
+          mkdir -p $HOME/deploy/vocata
+          chmod 755 $HOME/deploy/vocata
 
     - name: 复制文件到生产服务器
       uses: appleboy/scp-action@v0.1.7
@@ -554,7 +554,7 @@ jobs:
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
         source: "deploy/production/."
-        target: "/home/deploy/vocata"
+        target: "~/deploy/vocata"
         rm: true
 
     - name: 执行生产部署
@@ -565,7 +565,8 @@ jobs:
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
         script: |
-          cd /home/deploy/vocata
+          cd ~/deploy/vocata
+          ls -la
           chmod +x deploy.sh
           ./deploy.sh
 
