@@ -6,29 +6,20 @@ import com.vocata.common.config.JsonArrayDeserializer;
 import com.vocata.common.config.LongDeserializer;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
 /**
- * 创建角色请求DTO
+ * 管理员更新角色请求DTO
+ * 管理员拥有更多修改权限
  */
-public class CharacterCreateRequest {
-
-    /**
-     * 角色唯一编码，用于URL等
-     */
-    @NotBlank(message = "角色编码不能为空")
-    @Pattern(regexp = "^[a-zA-Z0-9_-]{3,50}$", message = "角色编码只能包含字母、数字、下划线、短横线，长度3-50位")
-    private String characterCode;
+public class CharacterAdminUpdateRequest {
 
     /**
      * 角色名称
      */
-    @NotBlank(message = "角色名称不能为空")
     @Size(max = 100, message = "角色名称不能超过100个字符")
     private String name;
 
@@ -46,7 +37,6 @@ public class CharacterCreateRequest {
     /**
      * 人设prompt（给LLM的核心指令）
      */
-    @NotBlank(message = "人设不能为空")
     private String persona;
 
     /**
@@ -90,7 +80,7 @@ public class CharacterCreateRequest {
      * 主要语言
      */
     @Pattern(regexp = "^(zh-CN|en-US|ja-JP|ko-KR)$", message = "不支持的语言")
-    private String language = "zh-CN";
+    private String language;
 
     /**
      * 默认模型ID
@@ -109,23 +99,29 @@ public class CharacterCreateRequest {
     /**
      * 上下文轮数
      */
-    @NotNull(message = "上下文轮数不能为空")
-    private Integer contextWindow = 10;
+    private Integer contextWindow;
 
     /**
      * 是否私有：false=公开 true=私有
      */
-    private Boolean isPrivate = true;
+    private Boolean isPrivate;
+
+    /**
+     * 是否官方角色：0=否 1=是（管理员专有权限）
+     */
+    private Integer isOfficial;
+
+    /**
+     * 是否精选推荐：0=否 1=是（管理员专有权限）
+     */
+    private Integer isFeatured;
+
+    /**
+     * 排序权重（管理员专有权限）
+     */
+    private Integer sortWeight;
 
     // Getters and Setters
-    public String getCharacterCode() {
-        return characterCode;
-    }
-
-    public void setCharacterCode(String characterCode) {
-        this.characterCode = characterCode;
-    }
-
     public String getName() {
         return name;
     }
@@ -252,5 +248,29 @@ public class CharacterCreateRequest {
 
     public void setIsPrivate(Boolean isPrivate) {
         this.isPrivate = isPrivate;
+    }
+
+    public Integer getIsOfficial() {
+        return isOfficial;
+    }
+
+    public void setIsOfficial(Integer isOfficial) {
+        this.isOfficial = isOfficial;
+    }
+
+    public Integer getIsFeatured() {
+        return isFeatured;
+    }
+
+    public void setIsFeatured(Integer isFeatured) {
+        this.isFeatured = isFeatured;
+    }
+
+    public Integer getSortWeight() {
+        return sortWeight;
+    }
+
+    public void setSortWeight(Integer sortWeight) {
+        this.sortWeight = sortWeight;
     }
 }

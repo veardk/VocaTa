@@ -1,5 +1,9 @@
 package com.vocata.character.dto.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.vocata.common.config.BigDecimalDeserializer;
+import com.vocata.common.config.JsonArrayDeserializer;
+import com.vocata.common.config.LongDeserializer;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
@@ -17,6 +21,7 @@ public class CharacterUpdateRequest {
      * 角色ID
      */
     @NotNull(message = "角色ID不能为空")
+    @JsonDeserialize(using = LongDeserializer.class)
     private Long id;
 
     /**
@@ -44,6 +49,7 @@ public class CharacterUpdateRequest {
     /**
      * 性格特征标签JSON数组：["温柔","智慧","幽默"]
      */
+    @JsonDeserialize(using = JsonArrayDeserializer.class)
     private String personalityTraits;
 
     /**
@@ -69,6 +75,7 @@ public class CharacterUpdateRequest {
     /**
      * 标签数组JSON：["动漫","治愈","女友"]
      */
+    @JsonDeserialize(using = JsonArrayDeserializer.class)
     private String tags;
 
     /**
@@ -85,6 +92,7 @@ public class CharacterUpdateRequest {
     /**
      * 默认模型ID
      */
+    @JsonDeserialize(using = LongDeserializer.class)
     private Long defaultModelId;
 
     /**
@@ -92,6 +100,7 @@ public class CharacterUpdateRequest {
      */
     @DecimalMin(value = "0.0", message = "温度参数最小为0.0")
     @DecimalMax(value = "2.0", message = "温度参数最大为2.0")
+    @JsonDeserialize(using = BigDecimalDeserializer.class)
     private BigDecimal temperature;
 
     /**
