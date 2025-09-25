@@ -78,15 +78,30 @@
         </div>
         <div class="empty-history" v-else-if="!sidebarCollapsed">暂无历史对话</div>
       </div>
-      <div class="user-section" v-if="!sidebarCollapsed">
-        <div class="user-info">
-          <div class="user-avatar"></div>
-          <div class="user-name">用户名</div>
+      <div class="user-section">
+        <div class="user-box" @click.stop="toogleUserMenu">
+          <div class="user-info">
+            <div class="user-avatar"></div>
+            <div class="user-name">用户名</div>
+          </div>
+          <div class="more">
+            <el-icon>
+              <MoreFilled />
+            </el-icon>
+          </div>
         </div>
-        <div class="more">
-          <el-icon>
-            <MoreFilled />
-          </el-icon>
+        <div class="user-menu" ref="userMenu" v-show="showUserMenu">
+          <div class="user-menu-item">
+            设置<el-icon><Setting /></el-icon>
+          </div>
+          <div
+            class="user-menu-item"
+            @click="logOut"
+            v-loading.fullscreen.lock="fullscreenLoading"
+            element-loading-text="退出中..."
+          >
+            退出<el-icon><SwitchButton /></el-icon>
+          </div>
         </div>
       </div>
     </div>
@@ -94,19 +109,30 @@
 </template>
 
 <script setup lang="ts">
+import { userApi } from '@/api/modules/user'
 import { isMobile } from '@/utils/isMobile'
-import { computed, nextTick, ref } from 'vue'
+import { removeToken } from '@/utils/token'
+import { ElMessage } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 const emit = defineEmits(['toggleSidebar'])
 const { sidebarCollapsed } = defineProps(['sidebarCollapsed'])
 const router = useRouter()
 const route = useRoute()
-
+const fullscreenLoading = ref(false)
 const isM = computed(() => isMobile())
-const chatHistory = ref<ChatHistoryItem[]>([])
+const chatHistory = ref<ChatHistoryItem[]>([
+  {
+    id: '1',
+    title: '对话1',
+    lastTime: new Date(),
+  },
+])
 const activeChatId = ref('')
 const searchText = ref('')
 const searchInput = ref()
+const userMenu = useTemplateRef('userMenu')
+const showUserMenu = ref(false)
 
 // 定义聊天记录类型
 interface ChatHistoryItem {
@@ -115,11 +141,15 @@ interface ChatHistoryItem {
   lastTime?: Date | string
   // 可以添加更多属性，如消息数量、未读数量等
 }
-
+onMounted(() => {
+  document.addEventListener('click', handleOutSide)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutSide)
+})
 const toggleSidebar = () => {
   emit('toggleSidebar')
 }
-
 const showRoleGallery = () => {
   console.log('showRoleGallery')
   router.push('/searchRole')
@@ -130,6 +160,7 @@ const createNewRole = () => {
 }
 const selectChat = (id: string) => {
   console.log('selectChat', id)
+  router.push(`/chat/${id}`)
 }
 const searchIconHandler = () => {
   emit('toggleSidebar')
@@ -137,9 +168,32 @@ const searchIconHandler = () => {
     searchInput.value.focus()
   })
 }
+const toogleUserMenu = () => {
+  showUserMenu.value = !showUserMenu.value
+}
+const handleOutSide = (e: MouseEvent) => {
+  if (userMenu.value && !userMenu.value.contains(e.target as Node) && showUserMenu.value) {
+    toogleUserMenu()
+  }
+}
+const logOut = async () => {
+  try {
+    fullscreenLoading.value = true
+    const res = await userApi.logout()
+    if (res.code === 200) {
+      removeToken()
+      ElMessage.success('退出成功')
+      router.push('/login')
+    }
+  } catch (error) {
+    console.log(error)
+  } finally {
+    fullscreenLoading.value = false
+  }
+}
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .sidebar {
   width: 2.5rem;
   background-color: #fff;
@@ -210,6 +264,7 @@ const searchIconHandler = () => {
 .sidebar-content {
   margin: 0.2rem 0;
   width: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -231,15 +286,15 @@ const searchIconHandler = () => {
       padding: 0.1rem 0.2rem;
       transition: all 0.2s;
       cursor: pointer;
-      color: #666;
+      color: #333;
 
       &:hover {
-        background-color: #f0f7ff;
-        color: #409eff;
+        background-color: #f7f7f7;
+        // color: #fff;
       }
       .role-btn__icon {
         // background: #000;
-        color: #000;
+        // color: #000;
         font-weight: bold;
         border-radius: 0.05rem;
         width: 0.3rem;
@@ -253,8 +308,8 @@ const searchIconHandler = () => {
       }
     }
     .active {
-      background-color: #e6f7ff;
-      color: #1890ff;
+      background-color: #eee;
+      // color: #fff;
       font-weight: 500;
     }
   }
@@ -281,10 +336,13 @@ const searchIconHandler = () => {
     padding: 0.2rem 0;
     border-top: 0.01rem solid #f0f0f0;
     flex: 1;
+    overflow: auto;
+    font-size: 0.16rem;
+
     h3 {
       font-size: 0.2rem;
       text-align: center;
-      margin: 0 0 0.15rem 0;
+      margin: 0 0 0.1rem 0;
       color: #333;
       font-weight: 500;
     }
@@ -306,13 +364,13 @@ const searchIconHandler = () => {
       position: relative;
 
       &:hover {
-        background-color: #f5f7fa;
+        background-color: #f7f7f7;
       }
 
       &.active {
-        background-color: #e6f7ff;
-        color: #1890ff;
-        font-weight: 500;
+        background-color: #eaeaea;
+        // color: #1890ff;
+        font-weight: bold;
       }
 
       .history-item-title {
@@ -338,30 +396,36 @@ const searchIconHandler = () => {
     }
   }
   .user-section {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0.2rem;
-    height: 0.45rem;
     width: 90%;
-    background: linear-gradient(to left top, #123, #456);
-    cursor: pointer;
-    border-radius: 0.1rem;
-    color: #fff;
+    position: relative;
+    .user-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 0.2rem;
+      height: 0.4rem;
+      background: linear-gradient(to top, #fff, #fff3);
+      cursor: pointer;
+      border-radius: 0.1rem;
+      color: #000;
+      &:hover {
+        background: linear-gradient(to top, #eee9, #eee3);
+      }
+    }
     .user-info {
       display: flex;
       align-items: center;
       justify-content: center;
       .user-avatar {
-        width: 0.2rem;
-        height: 0.2rem;
+        width: 0.25rem;
+        height: 0.25rem;
         border-radius: 50%;
         overflow: hidden;
-        margin-right: 0.1rem;
-        background-color: #e6f7ff;
+        background-color: #ccc;
       }
       .user-name {
-        font-size: 0.16rem;
+        margin-left: 0.15rem;
+        font-size: 0.2rem;
         line-height: 0.16rem;
       }
     }
@@ -369,8 +433,32 @@ const searchIconHandler = () => {
       font-size: 0.16rem;
       text-align: center;
     }
-    &:hover {
-      background: linear-gradient(to left top, #234, #567);
+    .user-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 110%;
+      background-color: #fffd;
+      color: #000;
+      border: 0.03rem solid #f5f5f5;
+      border-radius: 0.1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      .user-menu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.1rem 0.2rem;
+        width: 100%;
+        height: 0.4rem;
+        font-size: 0.16rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        &:hover {
+          background-color: #f5f5f5;
+        }
+      }
     }
   }
 }
