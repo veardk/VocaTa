@@ -94,7 +94,7 @@ http {
 
     # 管理后台服务器配置
     server {
-        listen 80;
+        listen 8080;
         server_name localhost;
         root /usr/share/nginx/html;
         index index.html index.htm;
@@ -168,11 +168,11 @@ RUN chown -R vocata:vocata /usr/share/nginx/html /etc/nginx
 USER vocata
 
 # 暴露端口
-EXPOSE 80
+EXPOSE 8080
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # 构建参数和标签
 ARG BUILD_DATE

@@ -280,10 +280,10 @@ jobs:
         DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
         # Redis配置
-        REDIS_HOST_STAGING="${{ secrets.REDIS_HOST }}"
-        REDIS_PORT_STAGING="${{ secrets.REDIS_PORT }}"
-        REDIS_PASSWORD_STAGING="${{ secrets.REDIS_PASSWORD }}"
-        REDIS_DATABASE_STAGING=1
+        REDIS_HOST="${{ secrets.REDIS_HOST }}"
+        REDIS_PORT="${{ secrets.REDIS_PORT }}"
+        REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
+        REDIS_DATABASE="${{ secrets.REDIS_DATABASE }}"
 
         # 七牛云配置
         QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
@@ -408,12 +408,12 @@ jobs:
                 fi
                 ;;
               "vocata-web")
-                if ! health_check "vocata-web" 3000; then
+                if ! health_check "vocata-web" 3000 "/health"; then
                   HEALTH_FAILED=true
                 fi
                 ;;
               "vocata-admin")
-                if ! health_check "vocata-admin" 3001; then
+                if ! health_check "vocata-admin" 3001 "/health"; then
                   HEALTH_FAILED=true
                 fi
                 ;;
