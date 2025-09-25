@@ -111,4 +111,45 @@ public interface CharacterService {
      * @return 是否有权限
      */
     boolean hasPermission(Long characterId, Long userId);
+
+    // ========== 标签管理相关方法 ==========
+
+    /**
+     * 同步角色标签信息
+     * 将JSON格式标签转换为数组字段，保持数据一致性
+     * @param characterId 角色ID
+     * @return 是否同步成功
+     */
+    boolean syncCharacterTags(Long characterId);
+
+    /**
+     * 根据标签ID查询角色列表
+     * @param page 分页参数
+     * @param tagIds 标签ID数组
+     * @param status 角色状态，null表示不过滤
+     * @return 角色分页列表
+     */
+    IPage<Character> getCharactersByTagIds(Page<Character> page, Long[] tagIds, Integer status);
+
+    /**
+     * 根据主要标签查询推荐角色
+     * @param primaryTagIds 主要标签ID数组
+     * @param limit 限制数量
+     * @param excludeCharacterId 排除的角色ID
+     * @return 推荐角色列表
+     */
+    List<Character> getRecommendedCharacters(Long[] primaryTagIds, int limit, Long excludeCharacterId);
+
+    /**
+     * 更新角色标签数组字段
+     * @param characterId 角色ID
+     * @param tagIds 标签ID数组
+     * @param tagNames 标签名称数组
+     * @param primaryTagIds 主要标签ID数组
+     * @param tagSummary 标签摘要
+     * @return 是否更新成功
+     */
+    boolean updateCharacterTagFields(Long characterId, Long[] tagIds, String[] tagNames,
+                                   Long[] primaryTagIds, String tagSummary);
+
 }

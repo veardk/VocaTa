@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  * 需要管理员权限
  */
 @RestController
-@RequestMapping("/admin/character")
+@RequestMapping("/api/admin/character")
 public class CharacterAdminController {
 
     @Autowired
