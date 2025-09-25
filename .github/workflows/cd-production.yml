@@ -327,10 +327,10 @@ jobs:
         # VocaTa 生产环境配置
         COMPOSE_PROJECT_NAME=vocata-production
 
-        # 镜像配置
-        SERVER_IMAGE="ghcr.io/veardk/vocata-server:${{ needs.prepare-production.outputs.image-tag }}"
-        WEB_IMAGE="ghcr.io/veardk/vocata-web:${{ needs.prepare-production.outputs.image-tag }}"
-        ADMIN_IMAGE="ghcr.io/veardk/vocata-admin:${{ needs.prepare-production.outputs.image-tag }}"
+        # 镜像配置 - 使用latest作为后备
+        SERVER_IMAGE="ghcr.io/veardk/vocata-server:latest"
+        WEB_IMAGE="ghcr.io/veardk/vocata-web:latest"
+        ADMIN_IMAGE="ghcr.io/veardk/vocata-admin:latest"
 
         # 应用配置
         SERVER_PORT=9009
