@@ -32,9 +32,9 @@ public class CharacterOpenController {
 
     /**
      * 获取公开角色列表
-     * GET /api/open/character/list
+     * GET /api/open/character/list 或 /api/open/character/public
      */
-    @GetMapping("/list")
+    @GetMapping({"/list", "/public"})
     public ApiResponse<PageResult<CharacterResponse>> getPublicCharacters(CharacterSearchRequest request) {
         // 防止空指针异常，设置默认值
         int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
@@ -98,9 +98,38 @@ public class CharacterOpenController {
     }
 
     /**
+     * 获取热门角色列表
+     * GET /api/open/character/trending
+     */
+    @GetMapping("/trending")
+    public ApiResponse<List<CharacterResponse>> getTrendingCharacters(@RequestParam(defaultValue = "10") int limit) {
+        List<Character> characters = characterService.getTrendingCharacters(limit);
+        List<CharacterResponse> responses = characters.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+
+        return ApiResponse.success(responses);
+    }
+
+    /**
+     * 获取精选角色列表
+     * GET /api/open/character/featured
+     */
+    @GetMapping("/featured")
+    public ApiResponse<List<CharacterResponse>> getFeaturedCharacters(@RequestParam(defaultValue = "10") int limit) {
+        List<Character> characters = characterService.getFeaturedCharacters(limit);
+        List<CharacterResponse> responses = characters.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+
+        return ApiResponse.success(responses);
+    }
+
+    /**
      * 根据角色编码或ID获取角色详情
      * GET /api/open/character/{characterCodeOrId}
      * 支持传入角色编码(string)或角色ID(数字)
+     * 注意：此映射必须放在最后，避免拦截其他具体路径
      */
     @GetMapping("/{characterCodeOrId}")
     public ApiResponse<CharacterDetailResponse> getCharacterByCodeOrId(@PathVariable String characterCodeOrId) {
@@ -129,34 +158,6 @@ public class CharacterOpenController {
 
         CharacterDetailResponse response = convertToDetailResponse(character);
         return ApiResponse.success(response);
-    }
-
-    /**
-     * 获取热门角色列表
-     * GET /api/open/character/trending
-     */
-    @GetMapping("/trending")
-    public ApiResponse<List<CharacterResponse>> getTrendingCharacters(@RequestParam(defaultValue = "10") int limit) {
-        List<Character> characters = characterService.getTrendingCharacters(limit);
-        List<CharacterResponse> responses = characters.stream()
-                .map(this::convertToResponse)
-                .collect(Collectors.toList());
-
-        return ApiResponse.success(responses);
-    }
-
-    /**
-     * 获取精选角色列表
-     * GET /api/open/character/featured
-     */
-    @GetMapping("/featured")
-    public ApiResponse<List<CharacterResponse>> getFeaturedCharacters(@RequestParam(defaultValue = "10") int limit) {
-        List<Character> characters = characterService.getFeaturedCharacters(limit);
-        List<CharacterResponse> responses = characters.stream()
-                .map(this::convertToResponse)
-                .collect(Collectors.toList());
-
-        return ApiResponse.success(responses);
     }
 
     /**
