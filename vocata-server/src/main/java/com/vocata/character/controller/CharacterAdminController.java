@@ -50,7 +50,9 @@ public class CharacterAdminController {
                 page,
                 request.getStatus(),
                 request.getIsFeatured(),
-                request.getTags()
+                request.getTags(),
+                request.getOrderBy(),
+                request.getOrderDirection()
         );
 
         List<CharacterResponse> responseList = result.getRecords().stream()
@@ -192,7 +194,9 @@ public class CharacterAdminController {
                 page,
                 CharacterStatus.UNDER_REVIEW,
                 null,
-                null
+                null,
+                "created_at",
+                "desc"
         );
 
         List<CharacterResponse> responseList = result.getRecords().stream()

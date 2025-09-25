@@ -64,7 +64,7 @@ public class CharacterSearchRequest {
     /**
      * 排序字段：created_at, updated_at, chat_count, trending_score, sort_weight
      */
-    private String orderBy = "created_at";
+    private String orderBy = "chat_count";
 
     /**
      * 排序方向：asc, desc

@@ -152,11 +152,10 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     }
 
     @Override
-    public IPage<Character> getPublicCharacters(Page<Character> page, Integer status, Integer isFeatured, List<String> tags) {
+    public IPage<Character> getPublicCharacters(Page<Character> page, Integer status, Integer isFeatured,
+                                               List<String> tags, String orderBy, String orderDirection) {
         LambdaQueryWrapper<Character> wrapper = new LambdaQueryWrapper<Character>()
-                .eq(Character::getIsPrivate, false)
-                .orderByDesc(Character::getSortWeight)
-                .orderByDesc(Character::getCreateDate);
+                .eq(Character::getIsPrivate, false);
 
         if (status != null) {
             wrapper.eq(Character::getStatus, status);
@@ -165,6 +164,9 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
             wrapper.eq(Character::getIsFeatured, isFeatured);
         }
         // TODO: 标签过滤需要使用JSON查询，暂时跳过
+
+        // 动态排序
+        applyOrderBy(wrapper, orderBy, orderDirection);
 
         return this.page(page, wrapper);
     }
@@ -189,7 +191,7 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     @Override
     public IPage<Character> searchCharacters(Page<Character> page, String keyword, Integer status) {
         if (StringUtils.isBlank(keyword)) {
-            return getPublicCharacters(page, status, null, null);
+            return getPublicCharacters(page, status, null, null, "chat_count", "desc");
         }
 
         LambdaQueryWrapper<Character> wrapper = new LambdaQueryWrapper<Character>()
@@ -313,7 +315,7 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     @Override
     public IPage<Character> getCharactersByTagIds(Page<Character> page, Long[] tagIds, Integer status) {
         if (tagIds == null || tagIds.length == 0) {
-            return this.getPublicCharacters(page, status, null, null);
+            return this.getPublicCharacters(page, status, null, null, "chat_count", "desc");
         }
 
         // 使用QueryWrapper查询包含任意标签的角色
@@ -447,6 +449,66 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
         return "{" + Arrays.stream(array)
                 .map(Object::toString)
                 .collect(Collectors.joining(",")) + "}";
+    }
+
+    /**
+     * 应用动态排序
+     */
+    private void applyOrderBy(LambdaQueryWrapper<Character> wrapper, String orderBy, String orderDirection) {
+        // 设置默认值
+        if (StringUtils.isBlank(orderBy)) {
+            orderBy = "chat_count";
+        }
+        if (StringUtils.isBlank(orderDirection)) {
+            orderDirection = "desc";
+        }
+
+        boolean isAsc = "asc".equalsIgnoreCase(orderDirection);
+
+        switch (orderBy.toLowerCase()) {
+            case "chat_count":
+                if (isAsc) {
+                    wrapper.orderByAsc(Character::getChatCount);
+                } else {
+                    wrapper.orderByDesc(Character::getChatCount);
+                }
+                break;
+            case "created_at":
+                if (isAsc) {
+                    wrapper.orderByAsc(Character::getCreateDate);
+                } else {
+                    wrapper.orderByDesc(Character::getCreateDate);
+                }
+                break;
+            case "updated_at":
+                if (isAsc) {
+                    wrapper.orderByAsc(Character::getUpdateDate);
+                } else {
+                    wrapper.orderByDesc(Character::getUpdateDate);
+                }
+                break;
+            case "trending_score":
+                if (isAsc) {
+                    wrapper.orderByAsc(Character::getTrendingScore);
+                } else {
+                    wrapper.orderByDesc(Character::getTrendingScore);
+                }
+                break;
+            case "sort_weight":
+                if (isAsc) {
+                    wrapper.orderByAsc(Character::getSortWeight);
+                } else {
+                    wrapper.orderByDesc(Character::getSortWeight);
+                }
+                break;
+            default:
+                // 默认按对话次数降序
+                wrapper.orderByDesc(Character::getChatCount);
+                break;
+        }
+
+        // 添加二级排序：创建时间降序
+        wrapper.orderByDesc(Character::getCreateDate);
     }
 
 }
