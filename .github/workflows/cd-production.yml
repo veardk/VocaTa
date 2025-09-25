@@ -328,9 +328,9 @@ jobs:
         COMPOSE_PROJECT_NAME=vocata-production
 
         # 镜像配置
-        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:latest', env.REGISTRY, github.repository_owner) }}
-        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:latest', env.REGISTRY, github.repository_owner) }}
-        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:latest', env.REGISTRY, github.repository_owner) }}
+        SERVER_IMAGE=${{ needs.build-server.outputs.image || format('{0}/{1}/vocata-server:latest', env.REGISTRY, github.actor) }}
+        WEB_IMAGE=${{ needs.build-web.outputs.image || format('{0}/{1}/vocata-web:latest', env.REGISTRY, github.actor) }}
+        ADMIN_IMAGE=${{ needs.build-admin.outputs.image || format('{0}/{1}/vocata-admin:latest', env.REGISTRY, github.actor) }}
 
         # 应用配置
         SERVER_PORT=9009
@@ -535,6 +535,17 @@ jobs:
 
         chmod +x deploy/production/deploy.sh
 
+    - name: 创建远程目录并复制文件
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
+        script: |
+          mkdir -p /home/deploy/vocata
+          chmod 755 /home/deploy/vocata
+
     - name: 复制文件到生产服务器
       uses: appleboy/scp-action@v0.1.7
       with:
@@ -542,9 +553,9 @@ jobs:
         username: ${{ secrets.PRODUCTION_USER }}
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
-        source: "deploy/production/*"
-        target: "/home/deploy/vocata/"
-        strip_components: 2
+        source: "deploy/production/."
+        target: "/home/deploy/vocata"
+        rm: true
 
     - name: 执行生产部署
       uses: appleboy/ssh-action@v1.0.3
