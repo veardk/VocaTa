@@ -427,6 +427,17 @@ jobs:
 
         chmod +x deploy/staging/deploy.sh
 
+    - name: 创建远程目录并复制文件
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        script: |
+          mkdir -p /home/deploy/vocata
+          chmod 755 /home/deploy/vocata
+
     - name: 复制文件到测试服务器
       uses: appleboy/scp-action@v0.1.7
       with:
@@ -434,9 +445,9 @@ jobs:
         username: ${{ secrets.STAGING_USER }}
         key: ${{ secrets.STAGING_SSH_KEY }}
         port: 22
-        source: "deploy/staging/*"
-        target: "/home/deploy/vocata/"
-        strip_components: 2
+        source: "deploy/staging/."
+        target: "/home/deploy/vocata"
+        rm: true
 
     - name: 执行部署
       uses: appleboy/ssh-action@v1.0.3
