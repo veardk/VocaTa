@@ -113,6 +113,23 @@ public class CharacterUpdateRequest {
      */
     private Boolean isPrivate;
 
+    // ========== 新增标签相关字段（可选） ==========
+
+    /**
+     * 标签ID数组（新增字段，可选）
+     */
+    private Long[] tagIds;
+
+    /**
+     * 标签名称数组（新增字段，可选）
+     */
+    private String[] tagNames;
+
+    /**
+     * 主要标签ID数组（新增字段，可选）
+     */
+    private Long[] primaryTagIds;
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -248,5 +265,31 @@ public class CharacterUpdateRequest {
 
     public void setIsPrivate(Boolean isPrivate) {
         this.isPrivate = isPrivate;
+    }
+
+    // ========== 新增字段的getter和setter方法 ==========
+
+    public Long[] getTagIds() {
+        return tagIds;
+    }
+
+    public void setTagIds(Long[] tagIds) {
+        this.tagIds = tagIds;
+    }
+
+    public String[] getTagNames() {
+        return tagNames;
+    }
+
+    public void setTagNames(String[] tagNames) {
+        this.tagNames = tagNames;
+    }
+
+    public Long[] getPrimaryTagIds() {
+        return primaryTagIds;
+    }
+
+    public void setPrimaryTagIds(Long[] primaryTagIds) {
+        this.primaryTagIds = primaryTagIds;
     }
 }

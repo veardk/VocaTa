@@ -166,6 +166,30 @@ public class CharacterDetailResponse {
      */
     private Boolean isPrivate;
 
+    // ========== 新增标签相关字段 ==========
+
+    /**
+     * 标签ID数组（新增字段）
+     */
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
+    private Long[] tagIds;
+
+    /**
+     * 标签名称数组（新增字段）
+     */
+    private String[] tagNames;
+
+    /**
+     * 主要标签ID数组（新增字段）
+     */
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
+    private Long[] primaryTagIds;
+
+    /**
+     * 标签摘要（新增字段）
+     */
+    private String tagSummary;
+
     /**
      * 创建者用户ID
      */
@@ -447,5 +471,39 @@ public class CharacterDetailResponse {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    // ========== 新增字段的getter和setter方法 ==========
+
+    public Long[] getTagIds() {
+        return tagIds;
+    }
+
+    public void setTagIds(Long[] tagIds) {
+        this.tagIds = tagIds;
+    }
+
+    public String[] getTagNames() {
+        return tagNames;
+    }
+
+    public void setTagNames(String[] tagNames) {
+        this.tagNames = tagNames;
+    }
+
+    public Long[] getPrimaryTagIds() {
+        return primaryTagIds;
+    }
+
+    public void setPrimaryTagIds(Long[] primaryTagIds) {
+        this.primaryTagIds = primaryTagIds;
+    }
+
+    public String getTagSummary() {
+        return tagSummary;
+    }
+
+    public void setTagSummary(String tagSummary) {
+        this.tagSummary = tagSummary;
     }
 }
