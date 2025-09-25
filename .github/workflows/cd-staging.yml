@@ -10,6 +10,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_health_check:
+        description: '跳过健康检查（快速部署）'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -275,10 +280,10 @@ jobs:
         DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
         # Redis配置
-        REDIS_HOST="${{ secrets.REDIS_HOST }}"
-        REDIS_PORT="${{ secrets.REDIS_PORT }}"
-        REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
-        REDIS_DATABASE=1
+        REDIS_HOST_STAGING="${{ secrets.REDIS_HOST }}"
+        REDIS_PORT_STAGING="${{ secrets.REDIS_PORT }}"
+        REDIS_PASSWORD_STAGING="${{ secrets.REDIS_PASSWORD }}"
+        REDIS_DATABASE_STAGING=1
 
         # 七牛云配置
         QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
@@ -366,59 +371,65 @@ jobs:
         done
 
         # 健康检查
-        echo "🏥 健康检查..."
+        if [[ "${{ github.event.inputs.skip_health_check }}" != "true" ]]; then
+          echo "🏥 健康检查..."
 
-        health_check() {
-          local service=$1
-          local port=$2
-          local path=${3:-"/"}
-          local max_attempts=12
-          local attempt=1
+          health_check() {
+            local service=$1
+            local port=$2
+            local path=${3:-"/"}
+            local max_attempts=6  # 减少从12次到6次
+            local attempt=1
 
-          while [ $attempt -le $max_attempts ]; do
-            if curl -f -m 10 "http://localhost:$port$path" > /dev/null 2>&1; then
-              echo "✓ $service 健康检查通过"
-              return 0
-            else
-              echo "⏳ 等待 $service 启动... ($attempt/$max_attempts)"
-              sleep 10
-              ((attempt++))
-            fi
+            while [ $attempt -le $max_attempts ]; do
+              if curl -f -m 5 "http://localhost:$port$path" > /dev/null 2>&1; then  # 超时从10s减少到5s
+                echo "✓ $service 健康检查通过"
+                return 0
+              else
+                echo "⏳ 等待 $service 启动... ($attempt/$max_attempts)"
+                sleep 5  # 间隔从10s减少到5s
+                ((attempt++))
+              fi
+            done
+
+            echo "✗ $service 健康检查失败"
+            docker-compose logs --tail=20 $service  # 减少日志行数从50到20
+            return 1
+          }
+
+          # 执行健康检查
+          HEALTH_FAILED=false
+
+          for service in "${SERVICES_TO_UPDATE[@]}"; do
+            case $service in
+              "vocata-server")
+                if ! health_check "vocata-server" 9009 "/api/actuator/health"; then
+                  HEALTH_FAILED=true
+                fi
+                ;;
+              "vocata-web")
+                if ! health_check "vocata-web" 3000; then
+                  HEALTH_FAILED=true
+                fi
+                ;;
+              "vocata-admin")
+                if ! health_check "vocata-admin" 3001; then
+                  HEALTH_FAILED=true
+                fi
+                ;;
+            esac
           done
 
-          echo "✗ $service 健康检查失败"
-          docker-compose logs --tail=50 $service
-          return 1
-        }
-
-        # 执行健康检查
-        HEALTH_FAILED=false
-
-        for service in "${SERVICES_TO_UPDATE[@]}"; do
-          case $service in
-            "vocata-server")
-              if ! health_check "vocata-server" 9009 "/api/actuator/health"; then
-                HEALTH_FAILED=true
-              fi
-              ;;
-            "vocata-web")
-              if ! health_check "vocata-web" 3000; then
-                HEALTH_FAILED=true
-              fi
-              ;;
-            "vocata-admin")
-              if ! health_check "vocata-admin" 3001; then
-                HEALTH_FAILED=true
-              fi
-              ;;
-          esac
-        done
-
-        if [[ "$HEALTH_FAILED" == "true" ]]; then
-          echo "❌ 部署失败: 健康检查未通过"
-          echo "正在回滚..."
-          docker-compose restart "${SERVICES_TO_UPDATE[@]}"
-          exit 1
+          if [[ "$HEALTH_FAILED" == "true" ]]; then
+            echo "❌ 部署失败: 健康检查未通过"
+            echo "正在回滚..."
+            docker-compose restart "${SERVICES_TO_UPDATE[@]}"
+            exit 1
+          fi
+        else
+          echo "⚡ 跳过健康检查（快速部署模式）"
+          echo "等待5秒后继续..."
+          sleep 5
         fi
 
         # 清理旧镜像
