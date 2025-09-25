@@ -300,6 +300,7 @@ jobs:
         DEPLOY_TAG="${{ needs.detect-changes.outputs.image-tag }}"
         DEPLOY_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
         DEPLOY_COMMIT="${{ github.sha }}"
+        SKIP_HEALTH_CHECK="${{ github.event.inputs.skip_health_check || 'false' }}"
         EOF
 
         # 复制 docker-compose 配置
@@ -371,7 +372,7 @@ jobs:
         done
 
         # 健康检查
-        if [[ "${{ github.event.inputs.skip_health_check }}" != "true" ]]; then
+        if [[ "$SKIP_HEALTH_CHECK" != "true" ]]; then
           echo "🏥 健康检查..."
 
           health_check() {

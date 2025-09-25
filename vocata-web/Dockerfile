@@ -47,10 +47,9 @@ COPY --from=build --chown=vocata:vocata /app/dist /usr/share/nginx/html
 
 # 创建Nginx配置文件
 RUN cat > /etc/nginx/nginx.conf << 'EOF'
-user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log;
-pid /run/nginx.pid;
+pid /tmp/nginx.pid;
 
 events {
     worker_connections 1024;
