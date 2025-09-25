@@ -68,7 +68,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public UserAdminResponse getUserDetail(String userId) {
-        User user = userMapper.selectById(userId);
+        User user = userMapper.selectById(Long.parseLong(userId));
         if (user == null) {
             throw new BizException(ApiCode.BAD_REQUEST.getCode(), "用户不存在");
         }
@@ -84,13 +84,13 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new BizException(ApiCode.BAD_REQUEST.getCode(), "无效的状态值");
         }
 
-        User user = userMapper.selectById(userId);
+        User user = userMapper.selectById(Long.parseLong(userId));
         if (user == null) {
             throw new BizException(ApiCode.BAD_REQUEST.getCode(), "用户不存在");
         }
 
         User updateUser = new User();
-        updateUser.setId(Long.valueOf(userId));
+        updateUser.setId(Long.parseLong(userId));
         updateUser.setStatus(status);
 
         int result = userMapper.updateById(updateUser);
