@@ -553,8 +553,9 @@ jobs:
         username: ${{ secrets.PRODUCTION_USER }}
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         port: 22
-        source: "deploy/production/."
+        source: "deploy/production/*"
         target: "~/deploy/vocata"
+        strip_components: 2
         rm: true
 
     - name: 执行生产部署
