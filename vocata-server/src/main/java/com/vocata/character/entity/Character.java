@@ -184,6 +184,30 @@ public class Character {
      */
     private Boolean isPrivate;
 
+    /**
+     * 标签ID数组（新字段，支持数组查询）
+     */
+    @TableField("tag_ids")
+    private Long[] tagIds;
+
+    /**
+     * 标签名称数组（冗余字段，提升查询性能）
+     */
+    @TableField("tag_names")
+    private String[] tagNames;
+
+    /**
+     * 主要标签ID数组（核心标签，用于推荐算法）
+     */
+    @TableField("primary_tag_ids")
+    private Long[] primaryTagIds;
+
+    /**
+     * 标签摘要（自动生成，用于搜索优化）
+     */
+    @TableField("tag_summary")
+    private String tagSummary;
+
 
     public Long getId() {
         return id;
@@ -448,6 +472,39 @@ public class Character {
 
     public void setIsDelete(Integer isDelete) {
         this.isDelete = isDelete;
+    }
+
+    // 新增字段的getter和setter方法
+    public Long[] getTagIds() {
+        return tagIds;
+    }
+
+    public void setTagIds(Long[] tagIds) {
+        this.tagIds = tagIds;
+    }
+
+    public String[] getTagNames() {
+        return tagNames;
+    }
+
+    public void setTagNames(String[] tagNames) {
+        this.tagNames = tagNames;
+    }
+
+    public Long[] getPrimaryTagIds() {
+        return primaryTagIds;
+    }
+
+    public void setPrimaryTagIds(Long[] primaryTagIds) {
+        this.primaryTagIds = primaryTagIds;
+    }
+
+    public String getTagSummary() {
+        return tagSummary;
+    }
+
+    public void setTagSummary(String tagSummary) {
+        this.tagSummary = tagSummary;
     }
 
 }
