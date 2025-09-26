@@ -2,76 +2,77 @@ package com.vocata.voice.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import com.vocata.common.entity.BaseEntity;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
 
 /**
- * 音色配置表
- * 管理角色与TTS提供商音色的映射关系
+ * 音色配置表（精简版）
  */
-@Data
-@EqualsAndHashCode(callSuper = true)
 @TableName("vocata_voice_profile")
 public class VoiceProfile extends BaseEntity {
 
     /**
-     * 音色配置ID（主键）
+     * 主键ID
      */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /**
-     * 音色唯一标识符（业务用）
+     * 业务音色ID（如：voice-en-harry）
      */
     private String voiceId;
 
     /**
-     * 音色名称
+     * 音色名称（如：哈利波特）
      */
     private String voiceName;
 
     /**
-     * 音色描述
-     */
-    private String description;
-
-    /**
-     * 语言类型（zh-CN, en-US等）
-     */
-    private String language;
-
-    /**
-     * 性别（male, female, neutral）
-     */
-    private String gender;
-
-    /**
-     * TTS提供商类型（xunfei, volcan, azure等）
+     * TTS提供商（如：xunfei）
      */
     private String provider;
 
     /**
-     * 提供商音色参数（如：x4_xiaoyan, aisjiuxu等）
+     * 提供商真实音色参数（如：aisjiuxu）
      */
     private String providerVoiceId;
 
-    /**
-     * 配置参数（JSON格式存储语速、音量等）
-     */
-    private String configParams;
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
 
-    /**
-     * 是否启用（0-禁用，1-启用）
-     */
-    private Integer isEnabled;
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-    /**
-     * 排序权重
-     */
-    private Integer sortOrder;
+    public String getVoiceId() {
+        return voiceId;
+    }
 
-    /**
-     * 备注信息
-     */
-    private String remarks;
+    public void setVoiceId(String voiceId) {
+        this.voiceId = voiceId;
+    }
+
+    public String getVoiceName() {
+        return voiceName;
+    }
+
+    public void setVoiceName(String voiceName) {
+        this.voiceName = voiceName;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
+    }
+
+    public String getProviderVoiceId() {
+        return providerVoiceId;
+    }
+
+    public void setProviderVoiceId(String providerVoiceId) {
+        this.providerVoiceId = providerVoiceId;
+    }
 }
