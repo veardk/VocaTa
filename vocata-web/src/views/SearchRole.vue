@@ -3,14 +3,20 @@
     <div class="header">
       <div class="title">探索</div>
       <div class="search">
-        <input type="text" v-model="searchInput" placeholder="搜索角色" />
+        <input
+          type="text"
+          v-model="searchInput"
+          placeholder="搜索角色"
+          @input="search"
+          @keyup.enter="search"
+        />
         <el-icon>
           <Search />
         </el-icon>
       </div>
     </div>
     <!--banner角色列表-->
-    <div class="banner" v-loading="loading1" element-loading-text="Loading...">
+    <div class="banner" v-loading="loading1" element-loading-text="Loading..." v-if="seachStatus">
       <div
         v-for="(item, index) in selectRoleList"
         :key="item.id"
@@ -65,6 +71,7 @@
 import { roleApi } from '@/api/modules/role'
 import type { PublicRoleQuery } from '@/types/api'
 import type { roleInfo } from '@/types/common'
+import debounce from '@/types/debounce'
 import { isMobile } from '@/utils/isMobile'
 import { computed, onMounted, ref, type Ref } from 'vue'
 const isM = computed(() => isMobile())
@@ -77,6 +84,8 @@ const searchParam: Ref<PublicRoleQuery> = ref({
   pageNum: 1,
   pageSize: 10,
 })
+
+const seachStatus = ref(true)
 
 const loading1 = ref(false)
 const loading2 = ref(false)
@@ -124,6 +133,19 @@ const getSelectedRoleList = async () => {
   selectRoleList.value = res.data
   console.log(selectRoleList.value)
   loading1.value = false
+}
+const debouncedSearch = debounce(async () => {
+  console.log('搜索:', searchInput.value)
+  if (searchInput.value) {
+    seachStatus.value = false
+    const res = await roleApi.searchRole({ keyword: searchInput.value })
+    roleList.value = res.data.list
+  } else {
+    seachStatus.value = true
+  }
+}, 500)
+const search = () => {
+  debouncedSearch()
 }
 onMounted(() => {
   Promise.all([getRoleList(), getSelectedRoleList()]).then(() => {})
@@ -241,7 +263,7 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  margin: 0.2rem;
+  margin-top: 0.2rem;
   position: relative;
   height: 4rem;
   .banner-item {
@@ -275,6 +297,8 @@ onMounted(() => {
   border-top: 1px solid #ccc;
   padding-top: 0.3rem;
   display: grid;
+  margin-top: 0.2rem;
+
   grid-template-columns: repeat(5, 1fr); /* 一行五个 */
   gap: 0.2rem; /* 间距0.1rem */
   .role-list-item {
