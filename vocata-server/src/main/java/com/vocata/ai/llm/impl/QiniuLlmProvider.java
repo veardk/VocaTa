@@ -10,11 +10,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -121,11 +123,22 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                         .header("Content-Type", "application/json")
                         .bodyValue(requestBody)
                         .retrieve()
-                        .bodyToFlux(String.class)
+                        .bodyToFlux(DataBuffer.class)
+                        .map(dataBuffer -> {
+                            byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                            dataBuffer.read(bytes);
+                            DataBufferUtils.release(dataBuffer);
+                            return new String(bytes, StandardCharsets.UTF_8);
+                        })
+                        .buffer() // 缓冲数据以处理不完整的SSE消息
+                        .flatMap(lines -> {
+                            String combined = String.join("", lines);
+                            return Flux.fromArray(combined.split("\n"))
+                                    .filter(line -> line.startsWith("data: ") && !line.equals("data: [DONE]"))
+                                    .map(line -> line.substring(6).trim())
+                                    .filter(data -> !data.isEmpty());
+                        })
                         .timeout(Duration.ofSeconds(timeoutSeconds))
-                        .filter(line -> line.startsWith("data: ") && !line.equals("data: [DONE]"))
-                        .map(line -> line.substring(6)) // 移除 "data: " 前缀
-                        .filter(data -> !data.trim().isEmpty())
                         .flatMap(this::parseQiniuStreamChunk)
                         .collectList() // 收集所有chunk
                         .flatMapMany(chunks -> {
