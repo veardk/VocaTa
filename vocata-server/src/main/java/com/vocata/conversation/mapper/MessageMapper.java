@@ -28,6 +28,31 @@ public interface MessageMapper extends BaseMapper<Message> {
     List<Message> findByConversationIdOrderByCreateDateAsc(@Param("conversationId") Long conversationId);
 
     /**
+     * 根据对话ID查找最新的指定数量消息，按创建时间倒序
+     * 用于对话界面显示最近消息
+     *
+     * @param conversationId 对话ID
+     * @param limit 限制数量，默认20，最大100
+     * @return 消息列表，按创建时间倒序（最新的在前）
+     */
+    @Select("SELECT * FROM vocata_messages WHERE conversation_id = #{conversationId} AND is_delete = 0 ORDER BY create_date DESC LIMIT #{limit}")
+    List<Message> findRecentMessagesByConversationId(@Param("conversationId") Long conversationId, @Param("limit") int limit);
+
+    /**
+     * 根据对话ID分页查找历史消息，按创建时间倒序
+     * 用于向前翻页查看历史消息
+     *
+     * @param conversationId 对话ID
+     * @param offset 偏移量
+     * @param limit 限制数量
+     * @return 消息列表，按创建时间倒序
+     */
+    @Select("SELECT * FROM vocata_messages WHERE conversation_id = #{conversationId} AND is_delete = 0 ORDER BY create_date DESC LIMIT #{limit} OFFSET #{offset}")
+    List<Message> findMessagesByConversationIdWithPagination(@Param("conversationId") Long conversationId,
+                                                             @Param("offset") int offset,
+                                                             @Param("limit") int limit);
+
+    /**
      * 根据对话ID查找最后一条消息
      */
     @Select("SELECT * FROM vocata_messages WHERE conversation_id = #{conversationId} AND is_delete = 0 ORDER BY create_date DESC LIMIT 1")

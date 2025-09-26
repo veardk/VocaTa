@@ -110,13 +110,59 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     public List<MessageResponse> getConversationMessages(UUID conversationUuid) {
-        logger.info("获取对话{}的消息列表", conversationUuid);
+        logger.warn("使用已废弃的方法 getConversationMessages，建议使用 getConversationRecentMessages");
+        logger.info("获取对话{}的所有消息", conversationUuid);
 
         // 验证对话是否存在
         Conversation conversation = getConversationByUuid(conversationUuid);
 
-        // 获取消息列表
+        // 获取消息列表（升序，保持向后兼容）
         List<Message> messages = messageMapper.findByConversationIdOrderByCreateDateAsc(conversation.getId());
+
+        return messages.stream().map(this::convertMessageToResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MessageResponse> getConversationRecentMessages(UUID conversationUuid) {
+        return getConversationRecentMessages(conversationUuid, 20); // 默认20条
+    }
+
+    @Override
+    public List<MessageResponse> getConversationRecentMessages(UUID conversationUuid, int limit) {
+        logger.info("获取对话{}的最新{}条消息", conversationUuid, limit);
+
+        // 参数验证
+        if (limit <= 0 || limit > 100) {
+            throw new BizException(ApiCode.INVALID_PARAM, "消息数量限制必须在1-100之间");
+        }
+
+        // 验证对话是否存在
+        Conversation conversation = getConversationByUuid(conversationUuid);
+
+        // 获取最新消息列表（倒序，最新的在前）
+        List<Message> messages = messageMapper.findRecentMessagesByConversationId(conversation.getId(), limit);
+
+        return messages.stream().map(this::convertMessageToResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MessageResponse> getConversationMessagesWithPagination(UUID conversationUuid, int offset, int limit) {
+        logger.info("分页获取对话{}的消息，offset: {}, limit: {}", conversationUuid, offset, limit);
+
+        // 参数验证
+        if (offset < 0) {
+            throw new BizException(ApiCode.INVALID_PARAM, "偏移量不能为负数");
+        }
+        if (limit <= 0 || limit > 100) {
+            throw new BizException(ApiCode.INVALID_PARAM, "消息数量限制必须在1-100之间");
+        }
+
+        // 验证对话是否存在
+        Conversation conversation = getConversationByUuid(conversationUuid);
+
+        // 分页获取消息列表（倒序）
+        List<Message> messages = messageMapper.findMessagesByConversationIdWithPagination(
+                conversation.getId(), offset, limit);
 
         return messages.stream().map(this::convertMessageToResponse).collect(Collectors.toList());
     }

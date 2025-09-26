@@ -35,8 +35,40 @@ public interface ConversationService {
 
     /**
      * 获取指定对话的所有消息，按创建时间升序
+     * @deprecated 建议使用 getConversationRecentMessages 方法
      */
+    @Deprecated
     List<MessageResponse> getConversationMessages(UUID conversationUuid);
+
+    /**
+     * 获取指定对话的最新消息（默认20条）
+     * 适用于对话界面的初始加载，按时间倒序返回（最新消息在前）
+     *
+     * @param conversationUuid 对话UUID
+     * @return 最新消息列表，最新消息在前
+     */
+    List<MessageResponse> getConversationRecentMessages(UUID conversationUuid);
+
+    /**
+     * 获取指定对话的最新消息（自定义数量）
+     * 适用于对话界面的初始加载，按时间倒序返回（最新消息在前）
+     *
+     * @param conversationUuid 对话UUID
+     * @param limit 限制数量（1-100）
+     * @return 最新消息列表，最新消息在前
+     */
+    List<MessageResponse> getConversationRecentMessages(UUID conversationUuid, int limit);
+
+    /**
+     * 分页获取对话的历史消息
+     * 适用于向前翻页查看历史消息，按时间倒序返回
+     *
+     * @param conversationUuid 对话UUID
+     * @param offset 偏移量（从0开始）
+     * @param limit 限制数量（1-100）
+     * @return 历史消息列表，按时间倒序
+     */
+    List<MessageResponse> getConversationMessagesWithPagination(UUID conversationUuid, int offset, int limit);
 
     /**
      * 更新对话的最后消息摘要

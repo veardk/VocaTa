@@ -61,16 +61,18 @@ public class ConversationController {
     }
 
     /**
-     * 获取指定对话的所有消息
+     * 获取指定对话的所有消息（已废弃）
      * GET /api/conversations/{conversation_uuid}/messages
+     * @deprecated 建议使用 /messages/recent 端点
      */
+    @Deprecated
     @GetMapping("/{conversationUuid}/messages")
     public ApiResponse<List<MessageResponse>> getConversationMessages(
             @PathVariable("conversationUuid") String conversationUuidStr) {
         Long userId = UserContext.getUserId();
         UUID conversationUuid = UUID.fromString(conversationUuidStr);
 
-        logger.info("用户{}获取对话{}的消息列表", userId, conversationUuid);
+        logger.info("用户{}获取对话{}的消息列表（已废弃方法）", userId, conversationUuid);
 
         // 验证对话是否属于当前用户
         if (!conversationService.validateConversationOwnership(conversationUuid, userId)) {
@@ -78,6 +80,54 @@ public class ConversationController {
         }
 
         List<MessageResponse> messages = conversationService.getConversationMessages(conversationUuid);
+
+        return ApiResponse.success(messages);
+    }
+
+    /**
+     * 获取指定对话的最新消息（默认20条）
+     * GET /api/conversations/{conversation_uuid}/messages/recent
+     */
+    @GetMapping("/{conversationUuid}/messages/recent")
+    public ApiResponse<List<MessageResponse>> getConversationRecentMessages(
+            @PathVariable("conversationUuid") String conversationUuidStr,
+            @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        Long userId = UserContext.getUserId();
+        UUID conversationUuid = UUID.fromString(conversationUuidStr);
+
+        logger.info("用户{}获取对话{}的最新{}条消息", userId, conversationUuid, limit);
+
+        // 验证对话是否属于当前用户
+        if (!conversationService.validateConversationOwnership(conversationUuid, userId)) {
+            return ApiResponse.error(403, "无权限访问此对话");
+        }
+
+        List<MessageResponse> messages = conversationService.getConversationRecentMessages(conversationUuid, limit);
+
+        return ApiResponse.success(messages);
+    }
+
+    /**
+     * 分页获取指定对话的历史消息
+     * GET /api/conversations/{conversation_uuid}/messages/history
+     */
+    @GetMapping("/{conversationUuid}/messages/history")
+    public ApiResponse<List<MessageResponse>> getConversationMessagesHistory(
+            @PathVariable("conversationUuid") String conversationUuidStr,
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        Long userId = UserContext.getUserId();
+        UUID conversationUuid = UUID.fromString(conversationUuidStr);
+
+        logger.info("用户{}分页获取对话{}的历史消息，offset: {}, limit: {}", userId, conversationUuid, offset, limit);
+
+        // 验证对话是否属于当前用户
+        if (!conversationService.validateConversationOwnership(conversationUuid, userId)) {
+            return ApiResponse.error(403, "无权限访问此对话");
+        }
+
+        List<MessageResponse> messages = conversationService.getConversationMessagesWithPagination(
+                conversationUuid, offset, limit);
 
         return ApiResponse.success(messages);
     }

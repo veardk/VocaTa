@@ -135,23 +135,23 @@ openai:
 # 科大讯飞STT/TTS配置 - 测试环境
 xunfei:
   stt:
-    app-id: ${XUNFEI_STT_APP_ID}
-    api-key: ${XUNFEI_STT_API_KEY}
-    secret-key: ${XUNFEI_STT_SECRET_KEY}
+    app-id: ${XUNFEI_STT_APP_ID:mock}
+    api-key: ${XUNFEI_STT_API_KEY:mock}
+    secret-key: ${XUNFEI_STT_SECRET_KEY:mock}
     host: ${XUNFEI_STT_HOST:iat-api.xfyun.cn}
     path: ${XUNFEI_STT_PATH:/v2/iat}
   tts:
-    app-id: ${XUNFEI_TTS_APP_ID}
-    api-key: ${XUNFEI_TTS_API_KEY}
-    secret-key: ${XUNFEI_TTS_SECRET_KEY}
+    app-id: ${XUNFEI_TTS_APP_ID:mock}
+    api-key: ${XUNFEI_TTS_API_KEY:mock}
+    secret-key: ${XUNFEI_TTS_SECRET_KEY:mock}
     host: ${XUNFEI_TTS_HOST:tts-api.xfyun.cn}
     path: ${XUNFEI_TTS_PATH:/v2/tts}
 
 # 火山引擎TTS配置 - 测试环境
 volcan:
   tts:
-    access-token: ${VOLCAN_TTS_ACCESS_TOKEN}
-    app-id: ${VOLCAN_TTS_APP_ID}
+    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:mock}
+    app-id: ${VOLCAN_TTS_APP_ID:mock}
     host: ${VOLCAN_TTS_HOST:openspeech.bytedance.com}
     region: ${VOLCAN_TTS_REGION:ap-beijing-1}
 
