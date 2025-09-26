@@ -19,11 +19,14 @@ public class SaTokenConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {
             // 公开接口，无需认证
-            SaRouter.match("/api/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**")
+            SaRouter.match("/api/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**",
+                          "/ws/**", "/websocket/**")
                     .stop();
 
             // 静态资源，无需认证
-            SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**")
+            SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**",
+                          "/websocket-test.html", "/*.html", "/*.css", "/*.js",
+                          "/favicon.ico", "/*.ico")
                     .stop();
 
             // 客户端认证相关接口，无需预先认证

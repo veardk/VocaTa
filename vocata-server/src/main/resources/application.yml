@@ -7,6 +7,14 @@ spring:
   application:
     name: vocata-server
 
+  # 静态资源配置
+  web:
+    resources:
+      static-locations: classpath:/static/
+      cache:
+        cachecontrol:
+          max-age: 3600
+
   # Jackson时间格式配置
   jackson:
     time-zone: GMT+8

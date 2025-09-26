@@ -14,9 +14,14 @@ import com.vocata.conversation.entity.Message;
 import com.vocata.conversation.mapper.ConversationMapper;
 import com.vocata.conversation.mapper.MessageMapper;
 import com.vocata.conversation.service.ConversationService;
+import com.vocata.ai.llm.LlmProvider;
+import com.vocata.ai.dto.UnifiedAiRequest;
+import com.vocata.ai.dto.UnifiedAiStreamChunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,11 +46,16 @@ public class ConversationServiceImpl implements ConversationService {
     @Autowired
     private CharacterMapper characterMapper;
 
+    @Autowired
+    @Qualifier("primaryLlmProvider")
+    private LlmProvider llmProvider;
+
     @Override
     public List<ConversationResponse> getUserConversations(Long userId) {
         logger.info("获取用户{}的对话列表", userId);
 
-        List<Conversation> conversations = conversationMapper.findByUserIdOrderByUpdateDateDesc(userId);
+        // 按创建时间降序排序 - 最新创建的对话在最前面
+        List<Conversation> conversations = conversationMapper.findByUserIdOrderByCreateDateDesc(userId);
 
         return conversations.stream().map(this::convertToResponse).collect(Collectors.toList());
     }
@@ -153,13 +163,108 @@ public class ConversationServiceImpl implements ConversationService {
             throw new BizException(ApiCode.FORBIDDEN, "无权限操作此对话");
         }
 
-        // 软删除对话
-        conversation.setIsDelete(1);
-        conversation.setUpdateId(userId);
-        conversationMapper.updateById(conversation);
+        // 使用MyBatis Plus的deleteById方法进行软删除
+        // 这将自动触发逻辑删除机制，设置 is_delete = 1
+        conversationMapper.deleteById(conversation.getId());
+        logger.info("已软删除对话，ID: {}", conversation.getId());
 
         // 软删除相关消息
         messageMapper.softDeleteByConversationId(conversation.getId());
+        logger.info("已软删除对话{}的所有相关消息", conversation.getId());
+    }
+
+    @Override
+    @Async
+    public void generateConversationTitleAsync(Long conversationId, String firstMessage) {
+        logger.info("开始异步生成对话{}的标题，基于首次消息: {}", conversationId, firstMessage);
+
+        try {
+            // 构建生成标题的提示词
+            String titlePrompt = "请根据用户的第一句话，为这次对话生成一个简短、准确的标题（不超过20个字符）。" +
+                    "只需要返回标题本身，不要有任何额外的解释或格式。\n" +
+                    "用户的话: " + firstMessage;
+
+            // 调用LLM生成标题 - 构建请求对象
+            UnifiedAiRequest titleRequest = new UnifiedAiRequest();
+            titleRequest.setUserMessage(titlePrompt);
+            titleRequest.setSystemPrompt("你是一个专业的对话标题生成助手。请根据用户的第一句话，生成一个简短、准确的中文对话标题。");
+
+            // 设置简单的模型配置
+            UnifiedAiRequest.ModelConfig modelConfig = new UnifiedAiRequest.ModelConfig();
+            modelConfig.setModelName("gemini-1.5-flash");
+            modelConfig.setTemperature(0.3); // 较低温度确保生成的标题较为稳定
+            titleRequest.setModelConfig(modelConfig);
+
+            UnifiedAiStreamChunk titleChunk = llmProvider.chat(titleRequest);
+            String generatedTitle = titleChunk != null ? titleChunk.getAccumulatedContent() : null;
+
+            // 清理生成的标题（去除引号和多余的空格）
+            if (generatedTitle != null) {
+                generatedTitle = generatedTitle.trim()
+                        .replaceAll("^[\"'`]+|[\"'`]+$", "") // 去除首尾引号
+                        .substring(0, Math.min(generatedTitle.length(), 50)); // 限制长度
+
+                if (generatedTitle.isEmpty()) {
+                    generatedTitle = "新对话";
+                }
+            } else {
+                generatedTitle = "新对话";
+            }
+
+            // 更新数据库中的标题
+            Conversation conversation = conversationMapper.selectById(conversationId);
+            if (conversation != null) {
+                conversation.setTitle(generatedTitle);
+                conversation.setUpdateId(conversation.getUserId());
+                conversationMapper.updateById(conversation);
+
+                logger.info("成功生成并更新对话{}的标题: {}", conversationId, generatedTitle);
+            }
+
+        } catch (Exception e) {
+            logger.error("生成对话{}标题时出错: {}", conversationId, e.getMessage(), e);
+            // 发生错误时设置默认标题
+            try {
+                Conversation conversation = conversationMapper.selectById(conversationId);
+                if (conversation != null && (conversation.getTitle() == null || conversation.getTitle().trim().isEmpty())) {
+                    conversation.setTitle("新对话");
+                    conversation.setUpdateId(conversation.getUserId());
+                    conversationMapper.updateById(conversation);
+                }
+            } catch (Exception ex) {
+                logger.error("设置默认标题时也出错了: {}", ex.getMessage());
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void updateConversationTitle(UUID conversationUuid, Long userId, String newTitle) {
+        logger.info("用户{}更新对话{}的标题为: {}", userId, conversationUuid, newTitle);
+
+        Conversation conversation = conversationMapper.findByConversationUuid(conversationUuid);
+        if (conversation == null) {
+            throw new BizException(ApiCode.CONVERSATION_NOT_EXIST);
+        }
+
+        if (!conversation.getUserId().equals(userId)) {
+            throw new BizException(ApiCode.FORBIDDEN, "无权限操作此对话");
+        }
+
+        // 验证标题长度
+        if (newTitle == null || newTitle.trim().isEmpty()) {
+            throw new BizException(ApiCode.INVALID_PARAM, "标题不能为空");
+        }
+
+        if (newTitle.length() > 100) {
+            throw new BizException(ApiCode.INVALID_PARAM, "标题长度不能超过100个字符");
+        }
+
+        conversation.setTitle(newTitle.trim());
+        conversation.setUpdateId(userId);
+        conversationMapper.updateById(conversation);
+
+        logger.info("成功更新对话{}的标题", conversationUuid);
     }
 
     /**
@@ -167,7 +272,19 @@ public class ConversationServiceImpl implements ConversationService {
      */
     private ConversationResponse convertToResponse(Conversation conversation) {
         ConversationResponse response = new ConversationResponse();
-        response.setConversationUuid(conversation.getConversationUuid().toString());
+
+        // 处理可能为NULL的UUID字段
+        if (conversation.getConversationUuid() != null) {
+            response.setConversationUuid(conversation.getConversationUuid().toString());
+        } else {
+            // 如果UUID为NULL，生成一个新的并更新数据库
+            UUID newUuid = UUID.randomUUID();
+            conversation.setConversationUuid(newUuid);
+            conversationMapper.updateById(conversation);
+            response.setConversationUuid(newUuid.toString());
+            logger.warn("对话ID {}的UUID为NULL，已自动生成新UUID: {}", conversation.getId(), newUuid);
+        }
+
         response.setCharacterId(conversation.getCharacterId().toString());
         response.setTitle(conversation.getTitle());
         response.setLastMessageSummary(conversation.getLastMessageSummary());

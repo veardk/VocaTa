@@ -38,4 +38,10 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
      */
     @Select("SELECT * FROM vocata_conversations WHERE user_id = #{userId} AND status = #{status} AND is_delete = 0 ORDER BY update_date DESC")
     List<Conversation> findByUserIdAndStatus(@Param("userId") Long userId, @Param("status") Integer status);
+
+    /**
+     * 根据用户ID查找所有对话，按创建时间倒序（最新创建的在前）
+     */
+    @Select("SELECT * FROM vocata_conversations WHERE user_id = #{userId} AND is_delete = 0 ORDER BY create_date DESC")
+    List<Conversation> findByUserIdOrderByCreateDateDesc(@Param("userId") Long userId);
 }

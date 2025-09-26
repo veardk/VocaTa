@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckLogin;
 import com.vocata.common.result.ApiResponse;
 import com.vocata.common.utils.UserContext;
 import com.vocata.conversation.dto.request.CreateConversationRequest;
+import com.vocata.conversation.dto.request.UpdateTitleRequest;
 import com.vocata.conversation.dto.response.ConversationResponse;
 import com.vocata.conversation.dto.response.MessageResponse;
 import com.vocata.conversation.service.ConversationService;
@@ -21,7 +22,7 @@ import java.util.UUID;
  * 对话会话控制器
  */
 @RestController
-@RequestMapping("/api/conversations")
+@RequestMapping("/api/client/conversations")
 @SaCheckLogin
 public class ConversationController {
 
@@ -112,4 +113,23 @@ public class ConversationController {
 
         return ApiResponse.success("对话已删除");
     }
+
+    /**
+     * 更新对话标题
+     * PUT /api/conversations/{conversation_uuid}/title
+     */
+    @PutMapping("/{conversationUuid}/title")
+    public ApiResponse<Void> updateConversationTitle(
+            @PathVariable("conversationUuid") String conversationUuidStr,
+            @RequestBody UpdateTitleRequest request) {
+        Long userId = UserContext.getUserId();
+        UUID conversationUuid = UUID.fromString(conversationUuidStr);
+
+        logger.info("用户{}更新对话{}的标题", userId, conversationUuid);
+
+        conversationService.updateConversationTitle(conversationUuid, userId, request.getTitle());
+
+        return ApiResponse.success("标题更新成功");
+    }
+
 }

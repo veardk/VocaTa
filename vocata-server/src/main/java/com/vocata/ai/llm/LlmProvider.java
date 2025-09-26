@@ -38,8 +38,41 @@ public interface LlmProvider {
      */
     default UnifiedAiStreamChunk chat(UnifiedAiRequest request) {
         return streamChat(request)
-                .filter(chunk -> chunk.getIsFinal() != null && chunk.getIsFinal())
-                .blockFirst();
+                .collectList()
+                .map(chunks -> {
+                    if (chunks.isEmpty()) {
+                        UnifiedAiStreamChunk result = new UnifiedAiStreamChunk();
+                        result.setContent("");
+                        result.setAccumulatedContent("");
+                        result.setIsFinal(true);
+                        return result;
+                    }
+
+                    StringBuilder accumulatedContent = new StringBuilder();
+                    UnifiedAiStreamChunk finalChunk = null;
+
+                    for (UnifiedAiStreamChunk chunk : chunks) {
+                        if (chunk.getContent() != null) {
+                            accumulatedContent.append(chunk.getContent());
+                        }
+                        if (chunk.getIsFinal() != null && chunk.getIsFinal()) {
+                            finalChunk = chunk;
+                        }
+                    }
+
+                    if (finalChunk != null) {
+                        finalChunk.setAccumulatedContent(accumulatedContent.toString());
+                        return finalChunk;
+                    }
+
+                    // 如果没有最终块，创建一个新的
+                    UnifiedAiStreamChunk result = new UnifiedAiStreamChunk();
+                    result.setContent(accumulatedContent.toString());
+                    result.setAccumulatedContent(accumulatedContent.toString());
+                    result.setIsFinal(true);
+                    return result;
+                })
+                .block();
     }
 
     /**
