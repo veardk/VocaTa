@@ -27,18 +27,45 @@ public class UuidTypeHandler extends BaseTypeHandler<UUID> {
     @Override
     public UUID getNullableResult(ResultSet rs, String columnName) throws SQLException {
         Object object = rs.getObject(columnName);
-        return object instanceof UUID ? (UUID) object : null;
+        if (object == null) {
+            return null;
+        }
+        if (object instanceof UUID) {
+            return (UUID) object;
+        }
+        if (object instanceof String) {
+            return UUID.fromString((String) object);
+        }
+        return null;
     }
 
     @Override
     public UUID getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
         Object object = rs.getObject(columnIndex);
-        return object instanceof UUID ? (UUID) object : null;
+        if (object == null) {
+            return null;
+        }
+        if (object instanceof UUID) {
+            return (UUID) object;
+        }
+        if (object instanceof String) {
+            return UUID.fromString((String) object);
+        }
+        return null;
     }
 
     @Override
     public UUID getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
         Object object = cs.getObject(columnIndex);
-        return object instanceof UUID ? (UUID) object : null;
+        if (object == null) {
+            return null;
+        }
+        if (object instanceof UUID) {
+            return (UUID) object;
+        }
+        if (object instanceof String) {
+            return UUID.fromString((String) object);
+        }
+        return null;
     }
 }

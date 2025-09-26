@@ -359,7 +359,16 @@ public class ConversationServiceImpl implements ConversationService {
      */
     private MessageResponse convertMessageToResponse(Message message) {
         MessageResponse response = new MessageResponse();
-        response.setMessageUuid(message.getMessageUuid().toString());
+
+        // 防护性检查UUID - 临时修复，待TypeHandler修复生效后可删除
+        if (message.getMessageUuid() != null) {
+            response.setMessageUuid(message.getMessageUuid().toString());
+        } else {
+            // 数据库中有UUID但Java对象中为null，这是TypeHandler问题
+            logger.warn("消息ID {}的UUID在Java对象中为null，这可能是TypeHandler问题", message.getId());
+            response.setMessageUuid("uuid-missing-" + message.getId()); // 临时处理
+        }
+
         response.setSenderType(message.getSenderType());
         response.setContentType(message.getContentType());
         response.setTextContent(message.getTextContent());
