@@ -2,11 +2,11 @@
   <div>
     <div :class="isM ? 'mobile' : 'pc'" class="main-container">
       <div class="chat-container">
-        <div class="chat-item" v-for="(item, index) in chats" :key="index">
+        <div class="chat-item" v-for="(item, index) in chats" :key="item.messageUuid || index">
           <div v-if="item.type == 'receive'" class="receive">
             <div class="avatar"></div>
             <div class="right">
-              <div class="name">AI</div>
+              <div class="name">{{ getCharacterName() }}</div>
               <div class="content">{{ item.content }}</div>
             </div>
           </div>
@@ -26,10 +26,11 @@
             v-model="input"
             :autosize="{ minRows: 1, maxRows: 5 }"
             placeholder="请输入内容"
+            @keydown.enter.prevent="sendMessage"
             resize="none"
             class="chat-input"
           ></el-input>
-          <button class="send-btn">
+          <button class="send-btn" @click="sendMessage">
             <el-icon><Promotion /></el-icon>
           </button>
         </div>
@@ -56,40 +57,213 @@
 </template>
 
 <script setup lang="ts">
+import { conversationApi } from '@/api/modules/conversation'
 import { isMobile } from '@/utils/isMobile'
-import { computed, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { ChatMessage } from '@/types/common'
+import type { MessageResponse } from '@/types/api'
 const isM = computed(() => isMobile())
-const chats = ref([
-  {
-    type: 'receive',
-    content: '你好，我是机器人，有什么可以帮助你的吗？',
-  },
-  {
-    type: 'send',
-    content: '你好，我想咨询一下关于贷款的问题。',
-  },
-
-  {
-    type: 'receive',
-    content:
-      '我会根据您的需求为您推荐合适的贷款产品，请问您需要贷款多少？请问您需要贷款期限是多久？还有，请问您需要贷款的用途是什么？',
-  },
-  {
-    type: 'send',
-    content: '我想贷款10万元。',
-  },
-  {
-    type: 'receive',
-    content: '好的，请问您需要贷款期限是多久？',
-  },
-])
+const chats = ref<ChatMessage[]>([])
+const isLoadingMessages = ref(false)
+const hasMoreHistory = ref(true)
+const currentOffset = ref(0)
 const input = ref('')
 const router = useRouter()
 const route = useRoute()
 const videoChat = ref(false)
-onMounted(() => {})
+const conversationUuid = computed(() => route.params.conversationUuid as string)
+const currentConversation = ref<any>(null)
+onMounted(() => {
+  if (conversationUuid.value) {
+    loadConversationAndMessages()
+  }
+})
 // 这里可以放全局逻辑
+
+// 监听路由参数变化，加载对应的对话消息
+watch(
+  () => route.params.conversationUuid,
+  (newConversationUuid) => {
+    if (newConversationUuid) {
+      chats.value = []
+      currentOffset.value = 0
+      hasMoreHistory.value = true
+      loadConversationAndMessages()
+    }
+  }
+)
+
+// 加载对话信息和消息
+const loadConversationAndMessages = async () => {
+  try {
+    // 先加载对话信息
+    await loadConversationInfo()
+    // 再加载消息
+    await loadRecentMessages()
+  } catch (error) {
+    console.error('加载对话和消息失败:', error)
+  }
+}
+
+// 加载最新消息
+const loadRecentMessages = async (limit: number = 20) => {
+  if (!conversationUuid.value || isLoadingMessages.value) return
+
+  try {
+    isLoadingMessages.value = true
+    const res = await conversationApi.getRecentMessages(conversationUuid.value, limit)
+    if (res.code === 200) {
+      // 将后端消息转换为前端所需的格式
+      const messages = convertMessagesToChatFormat(res.data)
+      // 按时间顺序排列（早的在前）
+      chats.value = messages.reverse()
+      currentOffset.value = res.data.length
+
+      // 如果是新对话（没有消息），显示欢迎消息
+      if (messages.length === 0) {
+        await showWelcomeMessage()
+      }
+    }
+  } catch (error) {
+    console.error('加载消息失败:', error)
+    ElMessage.error('加载消息失败')
+  } finally {
+    isLoadingMessages.value = false
+  }
+}
+
+// 加载更多历史消息
+const loadMoreHistory = async (limit: number = 20) => {
+  if (!conversationUuid.value || isLoadingMessages.value || !hasMoreHistory.value) return
+
+  try {
+    isLoadingMessages.value = true
+    const res = await conversationApi.getHistoryMessages(
+      conversationUuid.value,
+      currentOffset.value,
+      limit
+    )
+    if (res.code === 200) {
+      if (res.data.length === 0) {
+        hasMoreHistory.value = false
+        return
+      }
+
+      const messages = convertMessagesToChatFormat(res.data)
+      // 将历史消息添加到列表开头
+      chats.value = [...messages.reverse(), ...chats.value]
+      currentOffset.value += res.data.length
+
+      if (res.data.length < limit) {
+        hasMoreHistory.value = false
+      }
+    }
+  } catch (error) {
+    console.error('加载历史消息失败:', error)
+    ElMessage.error('加载历史消息失败')
+  } finally {
+    isLoadingMessages.value = false
+  }
+}
+
+// 将后端消息转换为前端所需的格式
+const convertMessagesToChatFormat = (messages: MessageResponse[]): ChatMessage[] => {
+  return messages.map(msg => ({
+    messageUuid: msg.messageUuid,
+    type: msg.senderType === 1 ? 'send' : 'receive',
+    content: msg.textContent,
+    senderType: msg.senderType,
+    contentType: msg.contentType,
+    audioUrl: msg.audioUrl,
+    createDate: msg.createDate,
+    metadata: msg.metadata
+  }))
+}
+
+// 发送消息
+const sendMessage = async () => {
+  if (!input.value.trim() || !conversationUuid.value) return
+
+  const messageContent = input.value.trim()
+  input.value = ''
+
+  // 立即在界面上显示用户消息
+  const userMessage: ChatMessage = {
+    type: 'send',
+    content: messageContent,
+    senderType: 1,
+    contentType: 1,
+    createDate: new Date().toISOString()
+  }
+  chats.value.push(userMessage)
+
+  // TODO: 调用发送消息接口（后端还未提供）
+  try {
+    // 这里需要等待后端实现发送消息的接口
+    // const response = await conversationApi.sendMessage(conversationUuid.value, { content: messageContent })
+
+    // 模拟AI回复（临时用）
+    setTimeout(() => {
+      const aiMessage: ChatMessage = {
+        type: 'receive',
+        content: '谢谢您的消息，这是一个模拟回复。待后端接口完成后将获得真实AI回复。',
+        senderType: 2,
+        contentType: 1,
+        createDate: new Date().toISOString()
+      }
+      chats.value.push(aiMessage)
+    }, 1000)
+  } catch (error) {
+    console.error('发送消息失败:', error)
+    ElMessage.error('发送消息失败')
+    // 发送失败时移除用户消息
+    chats.value.pop()
+    input.value = messageContent // 恢复输入内容
+  }
+}
+
+// 显示欢迎消息
+const showWelcomeMessage = async () => {
+  try {
+    if (currentConversation.value) {
+      const characterName = currentConversation.value.characterName || 'AI助手'
+      const defaultGreeting = `你好！我是${characterName}，很高兴和你对话！有什么我可以帮助你的吗？`
+
+      const welcomeMessage: ChatMessage = {
+        type: 'receive',
+        content: defaultGreeting,
+        senderType: 2,
+        contentType: 1,
+        createDate: new Date().toISOString()
+      }
+      chats.value.push(welcomeMessage)
+    }
+  } catch (error) {
+    console.error('显示欢迎消息失败:', error)
+  }
+}
+
+// 获取对话信息
+const loadConversationInfo = async () => {
+  try {
+    const res = await conversationApi.getConversationList()
+    if (res.code === 200) {
+      // 找到当前对话的信息
+      currentConversation.value = res.data.find(
+        (conv: any) => conv.conversationUuid === conversationUuid.value
+      )
+    }
+  } catch (error) {
+    console.error('获取对话信息失败:', error)
+  }
+}
+
+// 获取角色名称
+const getCharacterName = () => {
+  return currentConversation.value?.characterName || 'AI助手'
+}
 </script>
 
 <style lang="scss" scoped>
