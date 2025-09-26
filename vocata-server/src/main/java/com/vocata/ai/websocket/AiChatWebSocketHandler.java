@@ -146,6 +146,20 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                                             sendTtsAudioStream(session, audioBytes);
                                         }
 
+                                    } else if ("tts_result".equals(responseType)) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> ttsResultMap = (Map<String, Object>) response.get("tts_result");
+                                        if (ttsResultMap != null) {
+                                            byte[] ttsAudioData = (byte[]) ttsResultMap.get("audioData");
+                                            String correspondingText = (String) ttsResultMap.get("correspondingText");
+
+                                            if (ttsAudioData != null) {
+                                                logger.info("【TTS阶段】同步语音合成完成 - 音频: {} bytes, 文字: '{}'",
+                                                    ttsAudioData.length, correspondingText);
+                                                sendTtsResultStream(session, ttsAudioData, correspondingText);
+                                            }
+                                        }
+
                                     } else if ("complete".equals(responseType)) {
                                         logger.info("【完整流程】STT→LLM→TTS处理全部完成");
                                         sendStatusMessage(session, "语音处理完成");
@@ -241,6 +255,36 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
 
         } catch (IOException e) {
             logger.error("【TTS输出】发送TTS音频流失败", e);
+        }
+    }
+
+    /**
+     * 发送TTS同步结果流 - 同时发送音频数据和对应文字（新功能）
+     */
+    private void sendTtsResultStream(WebSocketSession session, byte[] audioData, String correspondingText) {
+        try {
+            logger.info("【TTS同步输出】发送音频和文字数据到前端 - 音频: {} bytes, 文字: '{}'",
+                audioData.length, correspondingText != null ? correspondingText : "");
+
+            // 1. 发送包含文字和音频元数据的消息
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+                    "type", "tts_sync_result",
+                    "text", correspondingText != null ? correspondingText : "",
+                    "audioSize", audioData.length,
+                    "format", "mp3", // 科大讯飞TTS返回MP3格式
+                    "sampleRate", 24000, // 科大讯飞采样率
+                    "channels", 1, // 单声道
+                    "bitDepth", 16, // 16位深度
+                    "timestamp", System.currentTimeMillis()
+            ))));
+
+            // 2. 发送原始音频数据作为二进制消息
+            session.sendMessage(new BinaryMessage(audioData));
+
+            logger.info("【TTS同步输出】音频和文字数据发送完成 - 前端可同步显示和播放");
+
+        } catch (IOException e) {
+            logger.error("【TTS同步输出】发送TTS同步结果流失败", e);
         }
     }
 
@@ -414,12 +458,12 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
     }
 
     private String extractConversationUuid(String uri) {
-        // 从URI中提取对话UUID: /ws/chat/{uuid}?userId=1
+        // 从URI中提取对话标识符: /ws/chat/{conversation_uuid}?userId=1
         try {
             String path = uri.split("\\?")[0]; // 去掉查询参数
             String[] parts = path.split("/");
             if (parts.length >= 3 && "chat".equals(parts[parts.length - 2])) {
-                return parts[parts.length - 1]; // 最后一部分是UUID
+                return parts[parts.length - 1]; // conversation_uuid
             }
         } catch (Exception e) {
             logger.error("提取对话UUID失败: {}", uri, e);
@@ -462,33 +506,37 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
      * 用户可以发送文字消息，AI将返回双重响应（文字+语音）
      */
     private void handleTextInput(WebSocketSession session, Map<String, Object> data) throws IOException {
-        String text = (String) data.get("text");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> messageData = (Map<String, Object>) data.get("data");
+
+        if (messageData == null) {
+            sendErrorMessage(session, "缺少data字段");
+            return;
+        }
+
+        String text = (String) messageData.get("message");
         if (text == null || text.trim().isEmpty()) {
             sendErrorMessage(session, "文字内容不能为空");
             return;
         }
 
-        // 从URI中提取对话ID和用户ID
+        // 从URI中提取对话UUID和用户ID
         String uri = session.getUri().toString();
-        String conversationUuid = extractConversationUuid(uri);
+        String conversationUuidStr = extractConversationUuid(uri);
         String userId = extractUserId(uri);
 
-        if (conversationUuid == null || userId == null) {
+        if (conversationUuidStr == null || userId == null) {
             sendErrorMessage(session, "无效的请求URI");
             return;
         }
 
-        logger.info("【文字输入处理】开始处理 - 会话: {}, 用户: {}, 文字内容: '{}'",
-                conversationUuid, userId, text);
+        logger.info("【文字输入处理】开始处理 - 会话UUID: {}, 用户: {}, 文字内容: '{}'",
+                conversationUuidStr, userId, text);
 
         try {
-            // 参数验证
-            UUID.fromString(conversationUuid);
-            Long.parseLong(userId);
-
             // 调用AiStreamingService处理文字消息
             // 这里直接跳过STT步骤，直接使用文字进行LLM+TTS处理
-            aiStreamingService.processTextMessage(conversationUuid, userId, text)
+            aiStreamingService.processTextMessage(conversationUuidStr, userId, text)
                     .subscribe(
                             response -> {
                                 try {
@@ -546,7 +594,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                     );
 
         } catch (Exception e) {
-            logger.error("【参数错误】UUID或用户ID格式错误: conversationUuid={}, userId={}", conversationUuid, userId);
+            logger.error("【参数错误】UUID或用户ID格式错误: conversationUuid={}, userId={}", conversationUuidStr, userId);
             sendErrorMessage(session, "参数格式错误");
         }
     }

@@ -22,6 +22,26 @@ public interface TtsClient {
     boolean isAvailable();
 
     /**
+     * 流式语音合成（包含文字和音频）
+     * 接收文本流并返回包含文字和音频的结果流
+     *
+     * @param textStream 文本数据流
+     * @param config 合成配置
+     * @return TTS结果流（包含音频数据和对应文字）
+     */
+    default Flux<TtsResult> streamSynthesizeWithText(Flux<String> textStream, TtsConfig config) {
+        // 默认实现：将原有的流式方法包装为TtsResult
+        return streamSynthesize(textStream, config)
+                .map(audioData -> {
+                    TtsResult result = new TtsResult();
+                    result.setAudioData(audioData);
+                    result.setAudioFormat(config.getAudioFormat());
+                    result.setSampleRate(config.getSampleRate());
+                    return result;
+                });
+    }
+
+    /**
      * 流式语音合成
      * 接收文本流并返回音频流
      *
@@ -60,12 +80,22 @@ public interface TtsClient {
         private int sampleRate;          // 采样率
         private double durationSeconds;   // 音频时长（秒）
         private String voiceId;          // 使用的语音ID
+        private String correspondingText; // 对应的文字内容
+        private Long startTime;          // 音频开始时间戳（毫秒）
+        private Long endTime;            // 音频结束时间戳（毫秒）
         private Map<String, Object> metadata; // 额外元数据
 
         public TtsResult() {}
 
         public TtsResult(byte[] audioData, String audioFormat, double durationSeconds) {
             this.audioData = audioData;
+            this.audioFormat = audioFormat;
+            this.durationSeconds = durationSeconds;
+        }
+
+        public TtsResult(byte[] audioData, String correspondingText, String audioFormat, double durationSeconds) {
+            this.audioData = audioData;
+            this.correspondingText = correspondingText;
             this.audioFormat = audioFormat;
             this.durationSeconds = durationSeconds;
         }
@@ -109,6 +139,30 @@ public interface TtsClient {
 
         public void setVoiceId(String voiceId) {
             this.voiceId = voiceId;
+        }
+
+        public String getCorrespondingText() {
+            return correspondingText;
+        }
+
+        public void setCorrespondingText(String correspondingText) {
+            this.correspondingText = correspondingText;
+        }
+
+        public Long getStartTime() {
+            return startTime;
+        }
+
+        public void setStartTime(Long startTime) {
+            this.startTime = startTime;
+        }
+
+        public Long getEndTime() {
+            return endTime;
+        }
+
+        public void setEndTime(Long endTime) {
+            this.endTime = endTime;
         }
 
         public Map<String, Object> getMetadata() {

@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +50,9 @@ public class ConversationServiceImpl implements ConversationService {
     @Autowired
     @Qualifier("primaryLlmProvider")
     private LlmProvider llmProvider;
+
+    @Value("${gemini.api.default-model:gemini-2.5-flash-lite}")
+    private String defaultLlmModel;
 
     @Override
     public List<ConversationResponse> getUserConversations(Long userId) {
@@ -191,7 +195,7 @@ public class ConversationServiceImpl implements ConversationService {
 
             // 设置简单的模型配置
             UnifiedAiRequest.ModelConfig modelConfig = new UnifiedAiRequest.ModelConfig();
-            modelConfig.setModelName("gemini-1.5-flash");
+            modelConfig.setModelName(defaultLlmModel); // 使用配置的LLM模型
             modelConfig.setTemperature(0.3); // 较低温度确保生成的标题较为稳定
             titleRequest.setModelConfig(modelConfig);
 

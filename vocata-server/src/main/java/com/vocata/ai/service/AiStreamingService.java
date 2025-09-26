@@ -3,10 +3,15 @@ package com.vocata.ai.service;
 import com.vocata.ai.dto.UnifiedAiRequest;
 import com.vocata.ai.dto.UnifiedAiStreamChunk;
 import com.vocata.ai.llm.LlmProvider;
+import com.vocata.ai.response.AiStreamingResponse;
+import com.vocata.ai.response.SttResult;
+import com.vocata.ai.response.LlmResponse;
 import com.vocata.ai.stt.SttClient;
 import com.vocata.ai.tts.TtsClient;
 import com.vocata.character.entity.Character;
 import com.vocata.character.mapper.CharacterMapper;
+import com.vocata.common.exception.BizException;
+import com.vocata.common.result.ApiCode;
 import com.vocata.conversation.constants.ContentType;
 import com.vocata.conversation.constants.SenderType;
 import com.vocata.conversation.entity.Conversation;
@@ -14,9 +19,12 @@ import com.vocata.conversation.entity.Message;
 import com.vocata.conversation.mapper.ConversationMapper;
 import com.vocata.conversation.mapper.MessageMapper;
 import com.vocata.conversation.service.ConversationService;
+import com.vocata.file.service.FileService;
+import com.vocata.file.dto.FileUploadResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -38,6 +46,9 @@ public class AiStreamingService {
     @Autowired
     private LlmProvider llmProvider;
 
+    @Value("${gemini.api.default-model:gemini-2.5-flash-lite}")
+    private String defaultLlmModel;
+
     @Autowired
     private SttClient sttClient;
 
@@ -55,6 +66,9 @@ public class AiStreamingService {
 
     @Autowired
     private CharacterMapper characterMapper;
+
+    @Autowired
+    private FileService fileService;
 
     /**
      * 处理音频输入的完整AI对话链路
@@ -187,13 +201,16 @@ public class AiStreamingService {
                                                                character.getLanguage());
 
         return saveAiMessage.thenMany(
-            ttsClient.streamSynthesize(Flux.just(aiText), ttsConfig)
-                    .doOnNext(audioData -> logger.debug("生成音频数据: {} bytes", audioData.length))
-                    .map(audioData -> {
-                        // 返回音频流
+            ttsClient.streamSynthesizeWithText(Flux.just(aiText), ttsConfig)
+                    .doOnNext(ttsResult -> logger.debug("生成TTS结果: {} bytes音频, 文字: {}",
+                        ttsResult.getAudioData().length, ttsResult.getCorrespondingText()))
+                    .map(ttsResult -> {
+                        // 返回包含音频和文字的TTS结果流
                         AiStreamingResponse response = new AiStreamingResponse();
-                        response.setType(AiStreamingResponse.ResponseType.AUDIO_CHUNK);
-                        response.setAudioData(audioData);
+                        response.setType(AiStreamingResponse.ResponseType.TTS_RESULT);
+                        response.setTtsResult(ttsResult);
+                        // 保留原有的audioData字段以向后兼容
+                        response.setAudioData(ttsResult.getAudioData());
                         return response;
                     })
                     .concatWith(Mono.fromCallable(() -> {
@@ -235,7 +252,7 @@ public class AiStreamingService {
 
         // 设置模型配置
         UnifiedAiRequest.ModelConfig modelConfig = new UnifiedAiRequest.ModelConfig();
-        modelConfig.setModelName("gemini-1.5-flash"); // 使用Gemini模型
+        modelConfig.setModelName(defaultLlmModel); // 使用配置的LLM模型
         modelConfig.setTemperature(character.getTemperature() != null ?
                                   character.getTemperature().doubleValue() : 0.7);
         modelConfig.setContextWindow(contextWindow);
@@ -272,74 +289,6 @@ public class AiStreamingService {
         });
     }
 
-    /**
-     * AI流式响应封装类
-     */
-    public static class AiStreamingResponse {
-        private ResponseType type;
-        private SttClient.SttResult sttResult;
-        private UnifiedAiStreamChunk llmChunk;
-        private byte[] audioData;
-        private String error;
-        private Map<String, Object> metadata;
-
-        public enum ResponseType {
-            STT_RESULT,    // STT识别结果
-            LLM_CHUNK,     // LLM文本流块
-            AUDIO_CHUNK,   // TTS音频流块
-            ERROR,         // 错误信息
-            COMPLETE       // 完成信号
-        }
-
-        // Getters and Setters
-        public ResponseType getType() {
-            return type;
-        }
-
-        public void setType(ResponseType type) {
-            this.type = type;
-        }
-
-        public SttClient.SttResult getSttResult() {
-            return sttResult;
-        }
-
-        public void setSttResult(SttClient.SttResult sttResult) {
-            this.sttResult = sttResult;
-        }
-
-        public UnifiedAiStreamChunk getLlmChunk() {
-            return llmChunk;
-        }
-
-        public void setLlmChunk(UnifiedAiStreamChunk llmChunk) {
-            this.llmChunk = llmChunk;
-        }
-
-        public byte[] getAudioData() {
-            return audioData;
-        }
-
-        public void setAudioData(byte[] audioData) {
-            this.audioData = audioData;
-        }
-
-        public String getError() {
-            return error;
-        }
-
-        public void setError(String error) {
-            this.error = error;
-        }
-
-        public Map<String, Object> getMetadata() {
-            return metadata;
-        }
-
-        public void setMetadata(Map<String, Object> metadata) {
-            this.metadata = metadata;
-        }
-    }
 
     /**
      * 实时处理单个音频块 - STT识别
@@ -433,66 +382,43 @@ public class AiStreamingService {
                 .doOnNext(audioData -> logger.debug("TTS生成音频: {} bytes", audioData.length));
     }
 
-    /**
-     * STT结果封装类
-     */
-    public static class SttResult {
-        private String text;
-        private boolean isFinal;
-        private double confidence;
-
-        public SttResult(String text, boolean isFinal, double confidence) {
-            this.text = text;
-            this.isFinal = isFinal;
-            this.confidence = confidence;
-        }
-
-        // Getters
-        public String getText() { return text; }
-        public boolean isFinal() { return isFinal; }
-        public double getConfidence() { return confidence; }
-    }
-
-    /**
-     * LLM响应封装类
-     */
-    public static class LlmResponse {
-        private String text;
-        private String characterName;
-        private boolean isComplete;
-
-        public LlmResponse(String text, String characterName, boolean isComplete) {
-            this.text = text;
-            this.characterName = characterName;
-            this.isComplete = isComplete;
-        }
-
-        // Getters
-        public String getText() { return text; }
-        public String getCharacterName() { return characterName; }
-        public boolean isComplete() { return isComplete; }
-    }
 
     /**
      * WebSocket专用：处理文字消息的完整链路
      * 跳过STT步骤，直接执行 LLM → TTS 处理，返回双重响应（文字流 + 音频流）
      *
-     * @param conversationUuid 对话UUID字符串
+     * @param conversationUuidStr 对话UUID字符串（统一使用conversation_uuid）
      * @param userId 用户ID字符串
      * @param textMessage 用户输入的文字消息
      * @return WebSocket格式的响应流（包含文字流和音频流）
      */
-    public Flux<Map<String, Object>> processTextMessage(String conversationUuid,
+    public Flux<Map<String, Object>> processTextMessage(String conversationUuidStr,
                                                         String userId,
                                                         String textMessage) {
-        logger.info("【文字消息处理】开始处理 - 对话: {}, 用户: {}, 文字: {}", conversationUuid, userId, textMessage);
+        logger.info("【文字消息处理】开始处理 - 对话UUID: {}, 用户: {}, 文字: {}", conversationUuidStr, userId, textMessage);
 
         try {
-            UUID uuid = UUID.fromString(conversationUuid);
             Long userIdLong = Long.parseLong(userId);
 
+            // 统一使用conversation_uuid查询 - 只支持标准UUID格式
+            UUID conversationUuid;
+            try {
+                conversationUuid = UUID.fromString(conversationUuidStr);
+                logger.info("使用标准UUID格式查询对话: {}", conversationUuid);
+            } catch (IllegalArgumentException e) {
+                logger.error("无效的对话UUID格式: {}", conversationUuidStr);
+                Map<String, Object> errorResponse = Map.of(
+                    "type", "error",
+                    "error", "无效的对话UUID格式，请提供标准UUID格式",
+                    "timestamp", System.currentTimeMillis()
+                );
+                return Flux.just(errorResponse);
+            }
+
+            Conversation conversation = conversationService.getConversationByUuid(conversationUuid);
+
             // 验证对话权限
-            if (!conversationService.validateConversationOwnership(uuid, userIdLong)) {
+            if (!conversation.getUserId().equals(userIdLong)) {
                 Map<String, Object> errorResponse = Map.of(
                     "type", "error",
                     "error", "无权限访问此对话",
@@ -501,7 +427,6 @@ public class AiStreamingService {
                 return Flux.just(errorResponse);
             }
 
-            Conversation conversation = conversationService.getConversationByUuid(uuid);
             Character character = characterMapper.selectById(conversation.getCharacterId());
 
             if (character == null) {
@@ -513,14 +438,18 @@ public class AiStreamingService {
                 return Flux.just(errorResponse);
             }
 
+            // 创建final引用供lambda使用
+            final Conversation finalConversation = conversation;
+            final Long finalUserIdLong = userIdLong;
+
             logger.info("【LLM阶段】开始处理用户文字消息: {}", textMessage);
 
             // 保存用户消息
-            saveMessage(conversation.getId(), textMessage, SenderType.USER, userIdLong)
+            saveMessage(finalConversation.getId(), textMessage, SenderType.USER, finalUserIdLong)
                 .subscribe(msg -> logger.debug("已保存用户文字消息: {}", msg.getId()));
 
             // 构建LLM请求
-            UnifiedAiRequest llmRequest = buildLlmRequest(conversation, character, textMessage);
+            UnifiedAiRequest llmRequest = buildLlmRequest(finalConversation, character, textMessage);
 
             // 收集完整的LLM响应用于TTS
             StringBuilder fullResponseBuilder = new StringBuilder();
@@ -550,7 +479,7 @@ public class AiStreamingService {
                         .doOnNext(fullText -> {
                             logger.info("【TTS阶段】开始处理完整回复: {}", fullText);
                             // 保存AI消息
-                            saveMessage(conversation.getId(), fullText, SenderType.CHARACTER, userIdLong)
+                            saveMessage(finalConversation.getId(), fullText, SenderType.CHARACTER, finalUserIdLong)
                                 .subscribe(msg -> logger.debug("已保存AI回复消息: {}", msg.getId()));
                         })
                         .flatMapMany(fullText -> {
@@ -559,13 +488,24 @@ public class AiStreamingService {
                                 character.getVoiceId(), character.getLanguage());
 
                             return ttsClient.streamSynthesize(Flux.just(fullText), ttsConfig)
-                                .doOnNext(audioData -> logger.debug("【TTS阶段】生成音频块: {} bytes", audioData.length))
-                                .map(audioData -> {
-                                    Map<String, Object> audioResponse = new HashMap<>();
-                                    audioResponse.put("type", "audio_chunk");
-                                    audioResponse.put("timestamp", System.currentTimeMillis());
-                                    audioResponse.put("audio_data", audioData);
-                                    return audioResponse;
+                                .collectList() // 收集所有音频块
+                                .flatMapMany(audioChunks -> {
+                                    // 异步上传完整音频到七牛云
+                                    uploadCompleteAudioToQiniu(audioChunks, finalConversation.getId(), fullText)
+                                        .doOnSuccess(audioUrl -> logger.info("【上传成功】音频URL: {}", audioUrl))
+                                        .doOnError(error -> logger.error("【上传失败】音频上传失败", error))
+                                        .subscribe(); // 异步执行，不阻塞响应流
+
+                                    // 同时返回音频数据流给前端
+                                    return Flux.fromIterable(audioChunks)
+                                        .doOnNext(audioData -> logger.debug("【TTS阶段】生成音频块: {} bytes", audioData.length))
+                                        .map(audioData -> {
+                                            Map<String, Object> audioResponse = new HashMap<>();
+                                            audioResponse.put("type", "audio_chunk");
+                                            audioResponse.put("timestamp", System.currentTimeMillis());
+                                            audioResponse.put("audio_data", audioData);
+                                            return audioResponse;
+                                        });
                                 })
                                 .concatWith(Mono.fromCallable(() -> {
                                     // 发送完成信号
@@ -670,6 +610,21 @@ public class AiStreamingService {
                 webSocketResponse.put("audio_data", response.getAudioData());
                 break;
 
+            case TTS_RESULT:
+                webSocketResponse.put("type", "tts_result");
+                if (response.getTtsResult() != null) {
+                    Map<String, Object> ttsResultMap = new HashMap<>();
+                    ttsResultMap.put("audioData", response.getTtsResult().getAudioData());
+                    ttsResultMap.put("correspondingText", response.getTtsResult().getCorrespondingText());
+                    ttsResultMap.put("audioFormat", response.getTtsResult().getAudioFormat());
+                    ttsResultMap.put("sampleRate", response.getTtsResult().getSampleRate());
+                    ttsResultMap.put("voiceId", response.getTtsResult().getVoiceId());
+                    ttsResultMap.put("startTime", response.getTtsResult().getStartTime());
+                    ttsResultMap.put("endTime", response.getTtsResult().getEndTime());
+                    webSocketResponse.put("tts_result", ttsResultMap);
+                }
+                break;
+
             case ERROR:
                 webSocketResponse.put("type", "error");
                 webSocketResponse.put("error", response.getError());
@@ -682,5 +637,79 @@ public class AiStreamingService {
         }
 
         return webSocketResponse;
+    }
+
+    /**
+     * 合并并上传完整音频到七牛云，同时更新消息表的audio_url字段
+     */
+    private Mono<String> uploadCompleteAudioToQiniu(List<byte[]> audioChunks, Long conversationId, String aiText) {
+        return Mono.fromCallable(() -> {
+            try {
+                // 计算总音频数据大小
+                int totalSize = audioChunks.stream().mapToInt(chunk -> chunk.length).sum();
+                logger.info("【音频上传】开始合并 {} 个音频块，总大小: {} bytes", audioChunks.size(), totalSize);
+
+                // 合并所有音频块
+                byte[] completeAudio = new byte[totalSize];
+                int offset = 0;
+                for (byte[] chunk : audioChunks) {
+                    System.arraycopy(chunk, 0, completeAudio, offset, chunk.length);
+                    offset += chunk.length;
+                }
+
+                // 生成音频文件名 (使用MP3格式)
+                String fileName = "tts_audio_" + System.currentTimeMillis() + ".mp3";
+
+                // 上传到七牛云
+                FileUploadResponse uploadResult = fileService.uploadAudioFile(
+                    completeAudio,
+                    fileName,
+                    "tts-audio",
+                    "audio/mpeg"
+                );
+
+                logger.info("【音频上传】上传成功 - 文件: {}, URL: {}", uploadResult.getFileName(), uploadResult.getFileUrl());
+
+                // 更新消息表的audio_url字段
+                updateMessageAudioUrl(conversationId, aiText, uploadResult.getFileUrl());
+
+                return uploadResult.getFileUrl();
+
+            } catch (Exception e) {
+                logger.error("【音频上传】上传失败", e);
+                throw new RuntimeException("音频上传失败: " + e.getMessage());
+            }
+        })
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic()); // 在IO线程中执行
+    }
+
+    /**
+     * 更新消息表的audio_url字段
+     */
+    private void updateMessageAudioUrl(Long conversationId, String aiText, String audioUrl) {
+        try {
+            // 查找对应的AI消息记录（根据对话ID和消息内容匹配）
+            Message message = messageMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Message>()
+                    .eq("conversation_id", conversationId)
+                    .eq("sender_type", SenderType.CHARACTER.getCode())
+                    .eq("text_content", aiText)
+                    .orderByDesc("create_date")
+                    .last("LIMIT 1")
+            );
+
+            if (message != null) {
+                message.setAudioUrl(audioUrl);
+                message.setUpdateId(1L); // 系统更新
+                messageMapper.updateById(message);
+                logger.info("【数据库更新】已更新消息ID {} 的audio_url: {}", message.getId(), audioUrl);
+            } else {
+                logger.warn("【数据库更新】未找到对应的AI消息记录，对话ID: {}, 文本: {}", conversationId, aiText);
+            }
+
+        } catch (Exception e) {
+            logger.error("【数据库更新】更新消息audio_url失败", e);
+            // 不抛出异常，避免影响主流程
+        }
     }
 }

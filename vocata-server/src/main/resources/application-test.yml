@@ -30,14 +30,24 @@ spring:
           max-wait: -1ms
           max-idle: 8
           min-idle: 0
-
-# 七牛云配置 - 测试环境
-qiniu:
-  access-key: ${QINIU_ACCESS_KEY}
-  secret-key: ${QINIU_SECRET_KEY}
-  bucket: ${QINIU_BUCKET:vocata-files-staging}
-  domain: ${QINIU_DOMAIN:https://test-files.vocata.com}
-  region: ${QINIU_REGION:huadong}
+  # 邮件配置 (163邮箱SMTP) - 测试环境
+  mail:
+    host: ${MAIL_HOST:smtp.163.com}
+    port: ${MAIL_PORT:465}
+    username: ${EMAIL_USER_NAME}
+    password: ${EMAIL_USER_PASSWORD}
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
 
 # MyBatis Plus配置 (测试环境关闭SQL日志)
 mybatis-plus:
@@ -82,6 +92,45 @@ sa-token:
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
     database: 2
+
+# AI服务配置 - 测试环境
+ai:
+  llm:
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 测试环境默认使用七牛云AI
+  stt:
+    provider: ${AI_STT_PROVIDER:xunfei}
+  tts:
+    provider: ${AI_TTS_PROVIDER:volcan}
+
+# 七牛云AI配置 - 测试环境
+qiniu:
+  access-key: ${QINIU_ACCESS_KEY}
+  secret-key: ${QINIU_SECRET_KEY}
+  bucket: ${QINIU_BUCKET:vocata-files-staging}
+  domain: ${QINIU_DOMAIN:https://test-files.vocata.com}
+  region: ${QINIU_REGION:huadong}
+  # AI服务配置
+  ai:
+    api-key: ${QINIU_AI_API_KEY}
+    base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
+    default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
+    timeout: ${QINIU_AI_TIMEOUT:60}
+
+# Gemini配置 - 测试环境
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    timeout: ${GEMINI_TIMEOUT:60}
+
+# OpenAI配置 - 测试环境
+openai:
+  api:
+    key: ${OPENAI_API_KEY}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
+    timeout: ${OPENAI_TIMEOUT:60}
 
 # 日志配置
 logging:

@@ -1,6 +1,7 @@
 package com.vocata.ai.tts.impl;
 
 import com.vocata.ai.tts.TtsClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,8 +37,17 @@ public class VolcanTtsClient implements TtsClient {
     @Value("${volcan.tts.secret-key:}")
     private String secretKey;
 
+    @Value("${volcan.tts.access-token:}")
+    private String accessToken;
+
     @Value("${volcan.tts.app-id:}")
     private String appId;
+
+    @Value("${volcan.tts.cluster:volcano_tts}")
+    private String cluster;
+
+    @Value("${volcan.tts.user-id:default_user}")
+    private String userId;
 
     @Value("${volcan.tts.host:openspeech.bytedance.com}")
     private String host;
@@ -50,15 +60,42 @@ public class VolcanTtsClient implements TtsClient {
 
     private final WebClient webClient;
 
-    // 支持的语音列表
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    // 支持的语音列表（基于2024年火山引擎最新音色）
     private static final String[] SUPPORTED_VOICES = {
+        // 通用场景音色
+        "BV001_streaming",              // 通用女声
+        "BV002_streaming",              // 通用男声
+        "BV034_streaming",              // 清甜女声
+        "BV033_streaming",              // 温暖男声
+
+        // 多情感音色
+        "BV700_streaming",              // 小萝莉
+        "BV701_streaming",              // 温柔女声
+        "BV702_streaming",              // 清脆男声
+
+        // 角色扮演音色（2024年新增）
+        "BV158_streaming",              // 奶气萌娃
+        "BV159_streaming",              // 病弱少女
+        "BV160_streaming",              // 傲娇霸总
+        "BV161_streaming",              // 温柔学姐
+
+        // 趣味口音
+        "BV119_streaming",              // 东北话
+        "BV120_streaming",              // 四川话
+        "BV121_streaming",              // 粤语
+
+        // 英文音色
+        "en_female_bella_moon_bigtts",  // 英文女声Bella
+        "en_male_adam_moon_bigtts",     // 英文男声Adam
+
+        // 经典音色（兼容）
         "zh_female_tianmeixiaotian_moon_bigtts",  // 天美小甜
         "zh_female_huanhuan_moon_bigtts",         // 欢欢
         "zh_male_wennuan_moon_bigtts",            // 温暖
         "zh_female_yangqi_moon_bigtts",           // 阳气
-        "zh_female_shuangkuai_moon_bigtts",       // 爽快
-        "en_female_bella_moon_bigtts",            // 英文女声Bella
-        "en_male_adam_moon_bigtts"                // 英文男声Adam
+        "zh_female_shuangkuai_moon_bigtts"        // 爽快
     };
 
     public VolcanTtsClient(WebClient.Builder webClientBuilder) {
@@ -72,8 +109,21 @@ public class VolcanTtsClient implements TtsClient {
 
     @Override
     public boolean isAvailable() {
-        return accessKey != null && !accessKey.isEmpty() &&
-               secretKey != null && !secretKey.isEmpty();
+        // 检查必需配置参数
+        boolean hasBasicConfig = appId != null && !appId.isEmpty();
+
+        // 火山引擎TTS使用Bearer Token认证
+        boolean hasTokenAuth = accessToken != null && !accessToken.isEmpty();
+
+        boolean isConfigured = hasBasicConfig && hasTokenAuth;
+
+        if (!isConfigured) {
+            logger.warn("火山引擎TTS配置不完整 - appId:{}, hasTokenAuth:{}",
+                       appId != null && !appId.isEmpty(), hasTokenAuth);
+            logger.warn("请在配置文件中设置: volcan.tts.app-id 和 volcan.tts.access-token");
+        }
+
+        return isConfigured;
     }
 
     @Override
@@ -93,7 +143,7 @@ public class VolcanTtsClient implements TtsClient {
     @Override
     public Flux<byte[]> streamSynthesize(Flux<String> textStream, TtsConfig config) {
         if (!isAvailable()) {
-            return Flux.error(new RuntimeException("火山引擎TTS服务配置不完整"));
+            return Flux.error(new RuntimeException("火山引擎TTS服务配置不完整：需要app-id和access-token"));
         }
 
         logger.info("开始火山引擎流式语音合成，语音: {}", config.getVoiceId());
@@ -118,7 +168,7 @@ public class VolcanTtsClient implements TtsClient {
     @Override
     public Mono<TtsResult> synthesize(String text, TtsConfig config) {
         if (!isAvailable()) {
-            return Mono.error(new RuntimeException("火山引擎TTS服务配置不完整"));
+            return Mono.error(new RuntimeException("火山引擎TTS服务配置不完整：需要app-id和access-token"));
         }
 
         if (text == null || text.trim().isEmpty()) {
@@ -157,20 +207,33 @@ public class VolcanTtsClient implements TtsClient {
         try {
             // 构建请求参数
             Map<String, Object> requestBody = buildRequestBody(text, config);
+            logger.debug("火山引擎TTS请求参数: {}", objectToJson(requestBody));
 
             // 构建签名和请求头
             String timestamp = String.valueOf(Instant.now().getEpochSecond());
             Map<String, String> headers = buildHeaders(requestBody, timestamp);
+            logger.debug("火山引擎TTS请求头: {}", headers);
 
             String url = String.format("https://%s/api/v1/tts", host);
 
             return webClient.post()
                     .uri(url)
-                    .headers(httpHeaders -> headers.forEach(httpHeaders::add))
+                    .headers(httpHeaders -> {
+                        headers.forEach(httpHeaders::add);
+                        // 不设置Host头，让WebClient自动处理
+                    })
                     .bodyValue(requestBody)
                     .retrieve()
+                    .onStatus(status -> status.isError(), response -> {
+                        return response.bodyToMono(String.class)
+                                .map(errorBody -> {
+                                    logger.error("火山引擎TTS API错误响应: Status={}, Body={}", response.statusCode(), errorBody);
+                                    return new RuntimeException("火山引擎TTS API错误: " + response.statusCode() + ", " + errorBody);
+                                });
+                    })
                     .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                    .doOnNext(response -> logger.debug("火山引擎TTS API响应: {}", response));
+                    .doOnNext(response -> logger.debug("火山引擎TTS API响应: {}", response))
+                    .doOnError(error -> logger.error("火山引擎TTS API调用失败: {}", error.getMessage()));
 
         } catch (Exception e) {
             return Mono.error(new RuntimeException("构建火山引擎TTS API请求失败", e));
@@ -178,62 +241,70 @@ public class VolcanTtsClient implements TtsClient {
     }
 
     /**
-     * 构建请求体
+     * 构建请求体 - 基于2024年火山引擎TTS API格式
      */
     private Map<String, Object> buildRequestBody(String text, TtsConfig config) {
         Map<String, Object> request = new HashMap<>();
 
         // 应用信息
         Map<String, Object> appInfo = new HashMap<>();
-        if (appId != null && !appId.isEmpty()) {
-            appInfo.put("appid", appId);
-        }
-        appInfo.put("cluster", "volcano_tts");
+        appInfo.put("appid", appId);
+        appInfo.put("cluster", cluster != null ? cluster : "volcano_tts");
         request.put("app", appInfo);
 
         // 用户信息
-        request.put("user", Map.of("uid", "default_user"));
+        Map<String, Object> user = new HashMap<>();
+        user.put("uid", userId != null ? userId : "default_user");
+        request.put("user", user);
 
         // 音频配置
         Map<String, Object> audio = new HashMap<>();
-        audio.put("voice_type", getVolcanVoiceId(config.getVoiceId()));
+        String mappedVoiceId = getVolcanVoiceId(config.getVoiceId());
+        audio.put("voice_type", mappedVoiceId);
         audio.put("encoding", mapAudioFormat(config.getAudioFormat()));
         audio.put("sample_rate", config.getSampleRate());
         audio.put("speed_ratio", config.getSpeed());
         audio.put("volume_ratio", config.getVolume());
         audio.put("pitch_ratio", config.getPitch());
+
+        logger.info("使用音色: {} -> {}", config.getVoiceId(), mappedVoiceId);
         request.put("audio", audio);
 
         // 请求内容
         Map<String, Object> reqData = new HashMap<>();
         reqData.put("text", text);
         reqData.put("text_type", "plain");
-        reqData.put("operation", "submit");
+        reqData.put("operation", "query");  // 修改为query
+        // 添加必需的reqid字段
+        reqData.put("reqid", java.util.UUID.randomUUID().toString());
         request.put("request", reqData);
 
         return request;
     }
 
     /**
-     * 构建请求头（包含签名）
+     * 构建请求头（支持Bearer Token认证）
      */
     private Map<String, String> buildHeaders(Map<String, Object> body, String timestamp) throws Exception {
         Map<String, String> headers = new HashMap<>();
 
         // 基本头信息
         headers.put("Content-Type", "application/json");
-        headers.put("Host", host);
-        headers.put("X-Date", timestamp);
+        // 移除固定的Resource-Id，让服务端自动识别
 
-        // 计算签名
-        String authorization = calculateSignature(body, timestamp);
-        headers.put("Authorization", authorization);
+        // 优先使用Access Token认证（推荐方式）
+        if (accessToken != null && !accessToken.isEmpty()) {
+            headers.put("Authorization", "Bearer; " + accessToken);
+            logger.debug("使用Bearer Token认证方式");
+        } else {
+            throw new RuntimeException("缺少有效的认证信息：需要access-token");
+        }
 
         return headers;
     }
 
     /**
-     * 计算火山引擎签名
+     * 计算火山引擎签名 - 移除Host头避免WebClient限制
      */
     private String calculateSignature(Map<String, Object> body, String timestamp) throws Exception {
         // 构建规范化请求
@@ -241,9 +312,9 @@ public class VolcanTtsClient implements TtsClient {
         String uri = "/api/v1/tts";
         String query = "";
 
-        // 规范化头部
-        String canonicalHeaders = String.format("content-type:application/json\nhost:%s\nx-date:%s\n", host, timestamp);
-        String signedHeaders = "content-type;host;x-date";
+        // 规范化头部（移除Host头，避免WebClient限制）
+        String canonicalHeaders = String.format("content-type:application/json\nx-date:%s\n", timestamp);
+        String signedHeaders = "content-type;x-date";
 
         // 请求体哈希
         String bodyJson = objectToJson(body);
@@ -269,11 +340,11 @@ public class VolcanTtsClient implements TtsClient {
     }
 
     /**
-     * 映射语音ID
+     * 映射语音ID - 支持最新的火山引擎音色
      */
     private String getVolcanVoiceId(String voiceId) {
         if (voiceId == null || voiceId.isEmpty()) {
-            return "zh_female_tianmeixiaotian_moon_bigtts"; // 默认语音
+            return "BV001_streaming"; // 默认通用女声
         }
 
         // 检查是否是支持的语音
@@ -283,7 +354,24 @@ public class VolcanTtsClient implements TtsClient {
             }
         }
 
-        return "zh_female_tianmeixiaotian_moon_bigtts"; // 默认语音
+        // 如果输入的是老版本音色ID，映射到新版本
+        switch (voiceId) {
+            case "tianmeixiaotian":
+                return "zh_female_tianmeixiaotian_moon_bigtts";
+            case "huanhuan":
+                return "zh_female_huanhuan_moon_bigtts";
+            case "wennuan":
+                return "zh_male_wennuan_moon_bigtts";
+            case "yangqi":
+                return "zh_female_yangqi_moon_bigtts";
+            case "shuangkuai":
+                return "zh_female_shuangkuai_moon_bigtts";
+            case "voice-en-harry":
+                return "en_male_adam_moon_bigtts";  // 映射到英文男声
+            default:
+                logger.warn("未识别的音色ID: {}, 使用默认音色", voiceId);
+                return "BV001_streaming"; // 默认通用女声
+        }
     }
 
     /**
@@ -364,9 +452,10 @@ public class VolcanTtsClient implements TtsClient {
     // 工具方法
     private String objectToJson(Object obj) {
         try {
-            // 简单的JSON序列化，生产环境应使用Jackson
-            return obj.toString().replaceAll("=", ":").replaceAll(", ", ",");
+            // 使用Jackson进行正确的JSON序列化
+            return objectMapper.writeValueAsString(obj);
         } catch (Exception e) {
+            logger.error("JSON序列化失败", e);
             return "{}";
         }
     }
