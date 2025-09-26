@@ -54,23 +54,27 @@ public class XunfeiStreamTtsClient implements TtsClient {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ReactorNettyWebSocketClient webSocketClient = new ReactorNettyWebSocketClient();
 
-    // 支持的语音列表（科大讯飞音色）
+    // 支持的语音列表（根据科大讯飞官方文档）
     private static final String[] SUPPORTED_VOICES = {
-        "xiaoyan",      // 小燕（女声，推荐）
-        "xiaoyu",       // 小宇（男声）
-        "xiaoxue",      // 小雪（女声）
-        "xiaofeng",     // 小峰（男声）
-        "xiaoqian",     // 小倩（女声）
-        "xiaolin",      // 小琳（女声）
-        "xiaomeng",     // 小萌（女声）
-        "xiaojing",     // 小静（女声）
-        "xiaokun",      // 小坤（男声）
-        "xiaoqiang",    // 小强（男声）
-        "vixf",         // 小峰（粤语）
-        "vixm",         // 小美（粤语）
-        "catherine",    // 英文女声
-        "henry",        // 英文男声
-        "voice-en-harry" // 映射到英文男声
+        "xiaoyan",              // 小燕（女声，推荐）
+        "xiaoyu",               // 小宇（男声）
+        "xiaoxue",              // 小雪（女声）
+        "xiaofeng",             // 小峰（男声）
+        "xiaoqian",             // 小倩（女声）
+        "xiaolin",              // 小琳（女声）
+        "xiaomeng",             // 小萌（女声）
+        "xiaojing",             // 小静（女声）
+        "xiaokun",              // 小坤（男声）
+        "xiaoqiang",            // 小强（男声）
+        "vixf",                 // 小峰（粤语）
+        "vixm",                 // 小美（粤语）
+        "catherine",            // 英文女声
+        "henry",                // 英文男声
+        "x4_xiaoyan",           // 讯飞小燕（普通话）
+        "x4_yezi",              // 讯飞叶子（普通话）
+        "aisjiuxu",             // 讯飞许久（普通话）
+        "aisjinger",            // 讯飞小静（普通话）
+        "aisbabyxu"             // 讯飞许小宝（普通话）
     };
 
     @Override
@@ -115,7 +119,7 @@ public class XunfeiStreamTtsClient implements TtsClient {
             return Flux.error(new RuntimeException("科大讯飞TTS服务配置不完整"));
         }
 
-        logger.info("开始科大讯飞流式语音合成（包含文字），语音: {}", config.getVoiceId());
+        logger.info("开始科大讯飞流式语音合成（包含文字），使用语音: {}", config.getVoiceId());
 
         return textStream
                 // 优化缓冲策略：按句子分割或时间窗口
@@ -150,7 +154,8 @@ public class XunfeiStreamTtsClient implements TtsClient {
             return Mono.error(new RuntimeException("合成文本不能为空"));
         }
 
-        logger.info("开始科大讯飞语音合成，文本长度: {}, 语音: {}", text.length(), config.getVoiceId());
+        logger.info("开始科大讯飞语音合成，文本长度: {}, 使用语音: {}",
+                   text.length(), config.getVoiceId());
 
         return streamSynthesizeText(text, config)
                 .collectList()
@@ -520,32 +525,20 @@ public class XunfeiStreamTtsClient implements TtsClient {
     }
 
     /**
-     * 映射语音ID到科大讯飞音色
+     * 获取科大讯飞音色ID - 直接使用输入的音色ID
+     * 不再进行映射转换，由上层业务逻辑决定使用哪个音色
      */
     private String getXunfeiVoiceId(String voiceId) {
+        logger.debug("输入语音ID: {}", voiceId);
+
         if (voiceId == null || voiceId.isEmpty()) {
-            return "xiaoyan"; // 默认小燕
+            logger.debug("使用默认语音ID: x4_xiaoyan");
+            return "x4_xiaoyan"; // 默认讯飞小燕
         }
 
-        // 检查是否是支持的语音
-        for (String supportedVoice : SUPPORTED_VOICES) {
-            if (supportedVoice.equals(voiceId)) {
-                return voiceId;
-            }
-        }
-
-        // 特殊映射
-        switch (voiceId) {
-            case "voice-en-harry":
-                return "henry"; // 映射到英文男声
-            case "voice-zh-female":
-                return "xiaoyan"; // 映射到中文女声
-            case "voice-zh-male":
-                return "xiaoyu"; // 映射到中文男声
-            default:
-                logger.warn("未识别的音色ID: {}, 使用默认音色", voiceId);
-                return "xiaoyan"; // 默认小燕
-        }
+        // 直接使用传入的音色ID，不进行映射转换
+        logger.debug("直接使用语音ID: {}", voiceId);
+        return voiceId;
     }
 
     /**
