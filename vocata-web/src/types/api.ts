@@ -37,6 +37,16 @@ export interface LoginResponse {
   expiresIn: number
 }
 
+// 用户信息响应数据
+export interface UserInfo {
+  id: string,
+  nickname: string,
+  email: string,
+  avatar: string,
+  gender: number,
+  createDate: string
+}
+
 // 修改密码参数
 export interface ChangePasswordParams {
   oldPassword: string,

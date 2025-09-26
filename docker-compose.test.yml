@@ -47,8 +47,8 @@ services:
       - EMAIL_USER_NAME=${EMAIL_USER_NAME}
       - EMAIL_USER_PASSWORD=${EMAIL_USER_PASSWORD}
       # 邮件服务配置
-      - MAIL_HOST=${MAIL_HOST:smtp.163.com}
-      - MAIL_PORT=${MAIL_PORT:465}
+      - MAIL_HOST=${MAIL_HOST:-smtp.163.com}
+      - MAIL_PORT=${MAIL_PORT:-465}
       - MAIL_USERNAME=${EMAIL_USER_NAME}
       - MAIL_PASSWORD=${EMAIL_USER_PASSWORD}
       # AI服务配置
