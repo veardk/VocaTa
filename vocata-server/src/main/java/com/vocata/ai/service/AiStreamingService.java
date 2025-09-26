@@ -483,41 +483,43 @@ public class AiStreamingService {
                                 .subscribe(msg -> logger.debug("已保存AI回复消息: {}", msg.getId()));
                         })
                         .flatMapMany(fullText -> {
-                            // TTS处理
+                            // TTS流式处理 - 正确的架构
                             TtsClient.TtsConfig ttsConfig = new TtsClient.TtsConfig(
                                 character.getVoiceId(), character.getLanguage());
 
-                            return ttsClient.streamSynthesize(Flux.just(fullText), ttsConfig)
-                                .collectList() // 收集所有音频块
-                                .flatMapMany(audioChunks -> {
-                                    // 异步上传完整音频到七牛云
-                                    uploadCompleteAudioToQiniu(audioChunks, finalConversation.getId(), fullText)
-                                        .doOnSuccess(audioUrl -> logger.info("【上传成功】音频URL: {}", audioUrl))
-                                        .doOnError(error -> logger.error("【上传失败】音频上传失败", error))
-                                        .subscribe(); // 异步执行，不阻塞响应流
+                            logger.info("【TTS阶段】开始流式语音合成，语音ID: {}", character.getVoiceId());
 
-                                    // 同时返回音频数据流给前端
-                                    return Flux.fromIterable(audioChunks)
-                                        .doOnNext(audioData -> logger.debug("【TTS阶段】生成音频块: {} bytes", audioData.length))
-                                        .map(audioData -> {
-                                            Map<String, Object> audioResponse = new HashMap<>();
-                                            audioResponse.put("type", "audio_chunk");
-                                            audioResponse.put("timestamp", System.currentTimeMillis());
-                                            audioResponse.put("audio_data", audioData);
-                                            return audioResponse;
-                                        });
+                            // 直接返回TTS音频流，不收集不上传
+                            return ttsClient.streamSynthesize(Flux.just(fullText), ttsConfig)
+                                .doOnNext(audioData -> logger.debug("【TTS阶段】生成音频块: {} bytes", audioData.length))
+                                .map(audioData -> {
+                                    Map<String, Object> audioResponse = new HashMap<>();
+                                    audioResponse.put("type", "audio_chunk");
+                                    audioResponse.put("timestamp", System.currentTimeMillis());
+                                    audioResponse.put("audio_data", audioData);
+                                    return audioResponse;
+                                })
+                                .doOnComplete(() -> {
+                                    logger.info("【TTS阶段】流式语音合成完成");
                                 })
                                 .concatWith(Mono.fromCallable(() -> {
-                                    // 发送完成信号
+                                    // 发送音频完成标志
                                     Map<String, Object> completeResponse = new HashMap<>();
-                                    completeResponse.put("type", "complete");
+                                    completeResponse.put("type", "audio_complete");
                                     completeResponse.put("timestamp", System.currentTimeMillis());
-                                    completeResponse.put("message", "处理完成");
-                                    logger.info("【处理完成】文字消息处理链路完成");
                                     return completeResponse;
                                 }));
                         })
                 )
+                .concatWith(Mono.fromCallable(() -> {
+                    // 发送最终完成信号
+                    Map<String, Object> finalCompleteResponse = new HashMap<>();
+                    finalCompleteResponse.put("type", "complete");
+                    finalCompleteResponse.put("timestamp", System.currentTimeMillis());
+                    finalCompleteResponse.put("message", "处理完成");
+                    logger.info("【处理完成】文字消息处理链路完成");
+                    return finalCompleteResponse;
+                }))
                 .onErrorResume(error -> {
                     logger.error("文字消息处理失败", error);
                     Map<String, Object> errorResponse = Map.of(
@@ -639,77 +641,4 @@ public class AiStreamingService {
         return webSocketResponse;
     }
 
-    /**
-     * 合并并上传完整音频到七牛云，同时更新消息表的audio_url字段
-     */
-    private Mono<String> uploadCompleteAudioToQiniu(List<byte[]> audioChunks, Long conversationId, String aiText) {
-        return Mono.fromCallable(() -> {
-            try {
-                // 计算总音频数据大小
-                int totalSize = audioChunks.stream().mapToInt(chunk -> chunk.length).sum();
-                logger.info("【音频上传】开始合并 {} 个音频块，总大小: {} bytes", audioChunks.size(), totalSize);
-
-                // 合并所有音频块
-                byte[] completeAudio = new byte[totalSize];
-                int offset = 0;
-                for (byte[] chunk : audioChunks) {
-                    System.arraycopy(chunk, 0, completeAudio, offset, chunk.length);
-                    offset += chunk.length;
-                }
-
-                // 生成音频文件名 (使用MP3格式)
-                String fileName = "tts_audio_" + System.currentTimeMillis() + ".mp3";
-
-                // 上传到七牛云
-                FileUploadResponse uploadResult = fileService.uploadAudioFile(
-                    completeAudio,
-                    fileName,
-                    "tts-audio",
-                    "audio/mpeg"
-                );
-
-                logger.info("【音频上传】上传成功 - 文件: {}, URL: {}", uploadResult.getFileName(), uploadResult.getFileUrl());
-
-                // 更新消息表的audio_url字段
-                updateMessageAudioUrl(conversationId, aiText, uploadResult.getFileUrl());
-
-                return uploadResult.getFileUrl();
-
-            } catch (Exception e) {
-                logger.error("【音频上传】上传失败", e);
-                throw new RuntimeException("音频上传失败: " + e.getMessage());
-            }
-        })
-        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic()); // 在IO线程中执行
-    }
-
-    /**
-     * 更新消息表的audio_url字段
-     */
-    private void updateMessageAudioUrl(Long conversationId, String aiText, String audioUrl) {
-        try {
-            // 查找对应的AI消息记录（根据对话ID和消息内容匹配）
-            Message message = messageMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Message>()
-                    .eq("conversation_id", conversationId)
-                    .eq("sender_type", SenderType.CHARACTER.getCode())
-                    .eq("text_content", aiText)
-                    .orderByDesc("create_date")
-                    .last("LIMIT 1")
-            );
-
-            if (message != null) {
-                message.setAudioUrl(audioUrl);
-                message.setUpdateId(1L); // 系统更新
-                messageMapper.updateById(message);
-                logger.info("【数据库更新】已更新消息ID {} 的audio_url: {}", message.getId(), audioUrl);
-            } else {
-                logger.warn("【数据库更新】未找到对应的AI消息记录，对话ID: {}, 文本: {}", conversationId, aiText);
-            }
-
-        } catch (Exception e) {
-            logger.error("【数据库更新】更新消息audio_url失败", e);
-            // 不抛出异常，避免影响主流程
-        }
-    }
 }

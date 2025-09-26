@@ -132,6 +132,29 @@ openai:
     default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
     timeout: ${OPENAI_TIMEOUT:60}
 
+# 科大讯飞STT/TTS配置 - 测试环境
+xunfei:
+  stt:
+    app-id: ${XUNFEI_STT_APP_ID}
+    api-key: ${XUNFEI_STT_API_KEY}
+    secret-key: ${XUNFEI_STT_SECRET_KEY}
+    host: ${XUNFEI_STT_HOST:iat-api.xfyun.cn}
+    path: ${XUNFEI_STT_PATH:/v2/iat}
+  tts:
+    app-id: ${XUNFEI_TTS_APP_ID}
+    api-key: ${XUNFEI_TTS_API_KEY}
+    secret-key: ${XUNFEI_TTS_SECRET_KEY}
+    host: ${XUNFEI_TTS_HOST:tts-api.xfyun.cn}
+    path: ${XUNFEI_TTS_PATH:/v2/tts}
+
+# 火山引擎TTS配置 - 测试环境
+volcan:
+  tts:
+    access-token: ${VOLCAN_TTS_ACCESS_TOKEN}
+    app-id: ${VOLCAN_TTS_APP_ID}
+    host: ${VOLCAN_TTS_HOST:openspeech.bytedance.com}
+    region: ${VOLCAN_TTS_REGION:ap-beijing-1}
+
 # 日志配置
 logging:
   level:
