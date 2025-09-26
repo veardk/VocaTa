@@ -5,7 +5,7 @@ export const roleApi = {
   // 获取公开角色列表
   getPublicRoleList(params: PublicRoleQuery) {
     return request({
-      url: '/client/character/public',
+      url: '/api/open/character/list',
       method: 'get',
       params
     })
@@ -13,7 +13,15 @@ export const roleApi = {
   // 获取精选角色列表
   getChoiceRoleList(params: { limit: number }) {
     return request({
-      url: '/client/character/featured',
+      url: '/api/open/character/featured',
+      method: 'get',
+      params
+    })
+  },
+  // 搜索角色
+  searchRole(params: { keyword: string }) {
+    return request({
+      url: '/api/client/character/search',
       method: 'get',
       params
     })

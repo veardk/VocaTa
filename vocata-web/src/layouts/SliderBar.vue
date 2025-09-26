@@ -81,8 +81,10 @@
       <div class="user-section">
         <div class="user-box" @click.stop="toogleUserMenu">
           <div class="user-info">
-            <div class="user-avatar"></div>
-            <div class="user-name">用户名</div>
+            <div class="user-avatar">
+              <img :src="userInfo.avatar" alt="" />
+            </div>
+            <div class="user-name">{{ userInfo.nickname }}</div>
           </div>
           <div class="more">
             <el-icon>
@@ -127,8 +129,17 @@ const chatHistory = ref<ChatHistoryItem[]>([
     title: '对话1',
     lastTime: new Date(),
   },
+  {
+    id: '2',
+    title: '对话2',
+    lastTime: new Date(),
+  },
 ])
 const activeChatId = ref('')
+const userInfo = ref({
+  nickname: '用户昵称',
+  avatar: 'https://cdn.jsdelivr.net/gh/linhaishe/images/img/202307291610919.png',
+})
 const searchText = ref('')
 const searchInput = ref()
 const userMenu = useTemplateRef('userMenu')
@@ -143,6 +154,7 @@ interface ChatHistoryItem {
 }
 onMounted(() => {
   document.addEventListener('click', handleOutSide)
+  getUserInfo()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutSide)
@@ -187,8 +199,19 @@ const logOut = async () => {
     }
   } catch (error) {
     console.log(error)
+    ElMessage.error('退出失败')
   } finally {
     fullscreenLoading.value = false
+  }
+}
+const getUserInfo = async () => {
+  try {
+    const res = await userApi.getUserInfo()
+    if (res.code === 200) {
+      userInfo.value = res.data
+    }
+  } catch (error) {
+    console.log(error)
   }
 }
 </script>
@@ -196,14 +219,14 @@ const logOut = async () => {
 <style lang="scss" scoped>
 .sidebar {
   width: 2.5rem;
-  background-color: #fff;
+  background-color: #f9f9f9;
   display: flex;
   flex-direction: column;
   align-items: center;
   transition: all 0.3s ease;
   font-size: 0.16rem;
   overflow: hidden;
-  box-shadow: 0.02rem 0 0.1rem rgba(0, 0, 0, 0.05);
+  box-shadow: 0.02rem 0 0.1rem rgba(0, 0, 0, 0.07);
 
   &.mobile {
     width: 100%;
@@ -422,6 +445,11 @@ const logOut = async () => {
         border-radius: 50%;
         overflow: hidden;
         background-color: #ccc;
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
       }
       .user-name {
         margin-left: 0.15rem;

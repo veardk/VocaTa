@@ -19,4 +19,8 @@ export const userApi = {
   logout(): Promise<Response<null>> {
     return request.post('/api/client/auth/logout')
   },
+  // 获取用户信息
+  getUserInfo(): Promise<Response<null>> {
+    return request.get('/api/client/user/profile')
+  }
 }
