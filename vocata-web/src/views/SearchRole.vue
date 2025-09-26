@@ -43,7 +43,7 @@
             <div class="name">{{ item.name }}</div>
           </div>
           <div class="description">{{ item.description }}</div>
-          <div class="goto">开始对话</div>
+          <div class="goto" @click="startConversation(item.id)">开始对话</div>
         </div>
       </div>
     </div>
@@ -60,7 +60,7 @@
             <div class="name">{{ item.name }}</div>
           </div>
           <div class="description">{{ item.description }}</div>
-          <div class="goto">开始对话</div>
+          <div class="goto" @click="startConversation(item.id)">开始对话</div>
         </div>
       </div>
     </div>
@@ -69,12 +69,16 @@
 
 <script setup lang="ts">
 import { roleApi } from '@/api/modules/role'
+import { conversationApi } from '@/api/modules/conversation'
 import type { PublicRoleQuery } from '@/types/api'
 import type { roleInfo } from '@/types/common'
 import debounce from '@/types/debounce'
 import { isMobile } from '@/utils/isMobile'
+import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, type Ref } from 'vue'
+import { useRouter } from 'vue-router'
 const isM = computed(() => isMobile())
+const router = useRouter()
 
 const searchInput = ref('')
 const roleList: Ref<roleInfo[]> = ref([])
@@ -152,6 +156,34 @@ const search = () => {
 onMounted(() => {
   Promise.all([getRoleList(), getSelectedRoleList()]).then(() => {})
 })
+
+// 开始对话
+const startConversation = async (characterId: string) => {
+  try {
+    // 添加加载状态
+    const loadingMessage = ElMessage.loading('正在创建对话...')
+
+    // 调用创建对话接口
+    const res = await conversationApi.createConversation({
+      characterId: characterId
+    })
+
+    loadingMessage.close()
+
+    if (res.code === 200) {
+      const conversationUuid = res.data.conversationUuid
+      ElMessage.success('对话创建成功！')
+
+      // 跳转到聊天页面
+      router.push(`/chat/${conversationUuid}`)
+    } else {
+      ElMessage.error('创建对话失败：' + res.message)
+    }
+  } catch (error) {
+    console.error('创建对话失败:', error)
+    ElMessage.error('创建对话失败，请稍后重试')
+  }
+}
 </script>
 
 <style lang="scss" scoped>

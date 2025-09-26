@@ -57,5 +57,45 @@ export interface ChangePasswordParams {
 export interface Response<T> {
   code: number,
   message: string,
-  data: T
+  data: T,
+  timestamp?: number
+}
+
+// 对话模块相关类型定义
+
+// 创建对话请求参数
+export interface CreateConversationRequest {
+  characterId: string,
+  title?: string
+}
+
+// 对话响应数据
+export interface ConversationResponse {
+  conversationUuid: string,
+  characterId: string,
+  characterName: string,
+  characterAvatarUrl: string,
+  title: string | null,
+  lastMessageSummary: string | null,
+  status: number,
+  createDate: string,
+  updateDate: string
+}
+
+// 更新对话标题请求参数
+export interface UpdateConversationTitleRequest {
+  title: string
+}
+
+// 消息响应数据
+export interface MessageResponse {
+  messageUuid: string,
+  senderType: number, // 1=用户, 2=AI角色
+  contentType: number, // 1=文本, 2=图片, 3=音频
+  textContent: string,
+  audioUrl: string | null,
+  llmModelId: string,
+  ttsVoiceId: string | null,
+  metadata: Record<string, any>,
+  createDate: string
 }
