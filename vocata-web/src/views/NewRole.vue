@@ -28,9 +28,39 @@
 
 <script setup lang="ts">
 import { isMobile } from '@/utils/isMobile'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import type { UploadProps } from 'element-plus'
+
 const isM = computed(() => isMobile())
-// 这里可以放全局逻辑
+
+// 表单数据
+const form = ref({
+  name: '',
+  description: '',
+  introduction: '',
+  greeting: '',
+  isPublic: false
+})
+
+// 头像相关
+const imageUrl = ref('')
+
+const handleAvatarSuccess: UploadProps['onSuccess'] = (response, uploadFile) => {
+  imageUrl.value = URL.createObjectURL(uploadFile.raw!)
+}
+
+const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
+  if (rawFile.type !== 'image/jpeg' && rawFile.type !== 'image/png') {
+    ElMessage.error('头像必须是JPG或PNG格式!')
+    return false
+  } else if (rawFile.size / 1024 / 1024 > 2) {
+    ElMessage.error('头像大小不能超过2MB!')
+    return false
+  }
+  return true
+}
 </script>
 
 <style lang="scss" scoped>
