@@ -24,6 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -119,7 +120,9 @@ public class XunfeiStreamTtsClient implements TtsClient {
             return Flux.error(new RuntimeException("科大讯飞TTS服务配置不完整"));
         }
 
-        logger.info("开始科大讯飞流式语音合成（包含文字），使用语音: {}", config.getVoiceId());
+        String actualVoiceId = getXunfeiVoiceId(config.getVoiceId());
+        logger.info("开始科大讯飞流式语音合成（包含文字），输入音色: {} -> 实际使用: {}",
+                   config.getVoiceId(), actualVoiceId);
 
         return textStream
                 // 优化缓冲策略：按句子分割或时间窗口
@@ -154,8 +157,9 @@ public class XunfeiStreamTtsClient implements TtsClient {
             return Mono.error(new RuntimeException("合成文本不能为空"));
         }
 
-        logger.info("开始科大讯飞语音合成，文本长度: {}, 使用语音: {}",
-                   text.length(), config.getVoiceId());
+        String actualVoiceId = getXunfeiVoiceId(config.getVoiceId());
+        logger.info("开始科大讯飞语音合成，文本长度: {}, 输入音色: {} -> 实际使用: {}",
+                   text.length(), config.getVoiceId(), actualVoiceId);
 
         return streamSynthesizeText(text, config)
                 .collectList()
@@ -387,26 +391,42 @@ public class XunfeiStreamTtsClient implements TtsClient {
 
         private void handleTtsResponse(String responseText) {
             try {
+                logger.debug("收到科大讯飞TTS响应: {}", responseText);
+
                 Map<String, Object> response = objectMapper.readValue(responseText, Map.class);
                 Integer code = (Integer) response.get("code");
+                String message = (String) response.get("message");
+                String sid = (String) response.get("sid");
+
+                logger.debug("解析响应 - code: {}, message: {}, sid: {}", code, message, sid);
+
+                // 打印完整的响应结构以便调试
+                logger.debug("完整响应结构: {}", response);
 
                 if (code == null || code != 0) {
-                    String message = (String) response.get("message");
                     logger.error("科大讯飞TTS错误 - code: {}, message: {}", code, message);
                     resultSink.tryEmitError(new RuntimeException("科大讯飞TTS服务错误: " + message));
                     return;
                 }
 
                 Map<String, Object> data = (Map<String, Object>) response.get("data");
+                logger.debug("data部分内容: {}", data);
+
                 if (data != null) {
                     Integer status = (Integer) data.get("status");
                     String audio = (String) data.get("audio");
 
+                    logger.debug("status: {}, audio数据长度: {}", status, audio != null ? audio.length() : 0);
+
                     // 提取对应的文字内容
                     String correspondingText = extractCorrespondingText(data);
+                    logger.debug("提取的对应文字: '{}'", correspondingText);
 
                     if (audio != null && !audio.isEmpty()) {
+                        logger.info("开始处理Base64音频数据 - Base64长度: {}", audio.length());
+
                         byte[] audioData = Base64.getDecoder().decode(audio);
+                        logger.info("Base64解码成功 - 音频字节数: {}", audioData.length);
 
                         // 创建TtsResult对象
                         TtsResult result = new TtsResult();
@@ -417,13 +437,21 @@ public class XunfeiStreamTtsClient implements TtsClient {
                         result.setVoiceId(config.getVoiceId());
                         result.setStartTime(System.currentTimeMillis());
 
+                        logger.info("TtsResult创建完成，发送到结果流");
                         resultSink.tryEmitNext(result);
+                    } else {
+                        logger.warn("音频数据为空或null - audio字段: {}", audio);
                     }
 
                     // status = 2 表示数据传输完成
                     if (status != null && status == 2) {
+                        logger.info("科大讯飞TTS数据传输完成 - status: 2");
                         resultSink.tryEmitComplete();
+                    } else if (status != null) {
+                        logger.debug("TTS传输状态: {}", status);
                     }
+                } else {
+                    logger.warn("响应中没有data部分");
                 }
             } catch (Exception e) {
                 logger.error("处理科大讯飞TTS响应失败", e);
@@ -465,7 +493,8 @@ public class XunfeiStreamTtsClient implements TtsClient {
      * 构建WebSocket URL（包含鉴权）
      */
     private String buildWebSocketUrl() throws Exception {
-        String timestamp = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z")
+        // 使用英文Locale确保时间戳格式正确
+        String timestamp = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
                 .withZone(ZoneId.of("GMT"))
                 .format(Instant.now());
 
@@ -479,9 +508,15 @@ public class XunfeiStreamTtsClient implements TtsClient {
 
         String authorizationBase64 = Base64.getEncoder().encodeToString(authorization.getBytes(StandardCharsets.UTF_8));
 
+        // 添加调试日志
+        logger.debug("构建WebSocket URL - timestamp: {}", timestamp);
+        logger.debug("签名原文: {}", signatureOrigin);
+        logger.debug("authorization: {}", authorization);
+
+        // authorization参数不进行URL编码，但date和host需要编码
         return String.format("wss://%s%s?authorization=%s&date=%s&host=%s",
                 host, path,
-                java.net.URLEncoder.encode(authorizationBase64, StandardCharsets.UTF_8),
+                authorizationBase64,  // 不进行URL编码
                 java.net.URLEncoder.encode(timestamp, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(host, StandardCharsets.UTF_8));
     }
@@ -525,20 +560,28 @@ public class XunfeiStreamTtsClient implements TtsClient {
     }
 
     /**
-     * 获取科大讯飞音色ID - 直接使用输入的音色ID
-     * 不再进行映射转换，由上层业务逻辑决定使用哪个音色
+     * 获取科大讯飞音色ID - 验证并使用有效的音色参数
+     * 如果传入的音色ID不被支持，则使用默认音色
      */
     private String getXunfeiVoiceId(String voiceId) {
         logger.debug("输入语音ID: {}", voiceId);
 
         if (voiceId == null || voiceId.isEmpty()) {
-            logger.debug("使用默认语音ID: x4_xiaoyan");
-            return "x4_xiaoyan"; // 默认讯飞小燕
+            logger.debug("使用默认语音ID: xiaoyan");
+            return "xiaoyan"; // 默认小燕（最基础音色）
         }
 
-        // 直接使用传入的音色ID，不进行映射转换
-        logger.debug("直接使用语音ID: {}", voiceId);
-        return voiceId;
+        // 检查是否是科大讯飞支持的音色
+        for (String supportedVoice : SUPPORTED_VOICES) {
+            if (supportedVoice.equals(voiceId)) {
+                logger.debug("使用有效的科大讯飞语音ID: {}", voiceId);
+                return voiceId;
+            }
+        }
+
+        // 如果传入的音色ID不被支持，记录警告并使用默认音色
+        logger.warn("不支持的音色ID: {}，使用默认音色: xiaoyan", voiceId);
+        return "xiaoyan"; // fallback到最基础的默认音色
     }
 
     /**
