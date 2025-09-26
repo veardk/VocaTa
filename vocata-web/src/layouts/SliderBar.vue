@@ -63,20 +63,59 @@
             v-for="chat in chatHistory"
             :key="chat.id"
             class="history-item"
-            :class="{ active: activeChatId === chat.id }"
-            @click="selectChat(chat.id)"
+            :class="{ active: activeChatId === chat.conversationUuid }"
+            @click="selectChat(chat.conversationUuid || chat.id)"
             :title="chat.title || '未命名对话'"
           >
             <el-icon><ChatDotRound /></el-icon>
-            <span v-if="!sidebarCollapsed" class="history-item-title">
+            <!-- 对话标题，支持双击编辑 -->
+            <span
+              v-if="!sidebarCollapsed && editingChatId !== (chat.conversationUuid || chat.id)"
+              class="history-item-title"
+              @dblclick="startEditTitle(chat.conversationUuid || chat.id, chat.title || '未命名对话')"
+            >
               {{ chat.title || '未命名对话' }}
             </span>
+
+            <!-- 编辑状态的输入框 -->
+            <el-input
+              v-if="!sidebarCollapsed && editingChatId === (chat.conversationUuid || chat.id)"
+              v-model="editingTitle"
+              class="history-item-edit-input"
+              size="small"
+              @blur="confirmEditTitle(chat.conversationUuid || chat.id)"
+              @keydown.enter="confirmEditTitle(chat.conversationUuid || chat.id)"
+              @keydown.esc="cancelEditTitle"
+              @click.stop
+              ref="editInput"
+            />
+
+            <!-- 操作按钮组 -->
+            <div v-if="!sidebarCollapsed" class="history-item-actions" @click.stop>
+              <el-icon
+                @click="startEditTitle(chat.conversationUuid || chat.id, chat.title || '未命名对话')"
+                class="action-btn rename-btn"
+                title="重命名"
+              >
+                <Edit />
+              </el-icon>
+              <el-icon
+                @click="deleteChat(chat.conversationUuid || chat.id, $event)"
+                class="action-btn delete-btn"
+                title="删除"
+              >
+                <Delete />
+              </el-icon>
+            </div>
             <!--  <span class="history-time" v-if="!sidebarCollapsed">
               {{ formatTime(chat.lastTime) }}
             </span> -->
           </div>
         </div>
-        <div class="empty-history" v-else-if="!sidebarCollapsed">暂无历史对话</div>
+        <div class="empty-history" v-else-if="!sidebarCollapsed">
+          <div v-if="isLoadingHistory">加载中...</div>
+          <div v-else>暂无历史对话</div>
+        </div>
       </div>
       <div class="user-section">
         <div class="user-box" @click.stop="toogleUserMenu">
@@ -112,29 +151,21 @@
 
 <script setup lang="ts">
 import { userApi } from '@/api/modules/user'
+import { conversationApi } from '@/api/modules/conversation'
 import { isMobile } from '@/utils/isMobile'
 import { removeToken } from '@/utils/token'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { ChatHistoryItem } from '@/types/common'
 const emit = defineEmits(['toggleSidebar'])
 const { sidebarCollapsed } = defineProps(['sidebarCollapsed'])
 const router = useRouter()
 const route = useRoute()
 const fullscreenLoading = ref(false)
 const isM = computed(() => isMobile())
-const chatHistory = ref<ChatHistoryItem[]>([
-  {
-    id: '1',
-    title: '对话1',
-    lastTime: new Date(),
-  },
-  {
-    id: '2',
-    title: '对话2',
-    lastTime: new Date(),
-  },
-])
+const chatHistory = ref<ChatHistoryItem[]>([])
+const isLoadingHistory = ref(false)
 const activeChatId = ref('')
 const userInfo = ref({
   nickname: '用户昵称',
@@ -143,18 +174,17 @@ const userInfo = ref({
 const searchText = ref('')
 const searchInput = ref()
 const userMenu = useTemplateRef('userMenu')
+const editInput = useTemplateRef('editInput')
 const showUserMenu = ref(false)
 
-// 定义聊天记录类型
-interface ChatHistoryItem {
-  id: string
-  title?: string
-  lastTime?: Date | string
-  // 可以添加更多属性，如消息数量、未读数量等
-}
+// 编辑相关状态
+const editingChatId = ref('')
+const editingTitle = ref('')
+
 onMounted(() => {
   document.addEventListener('click', handleOutSide)
   getUserInfo()
+  loadChatHistory()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutSide)
@@ -170,9 +200,10 @@ const createNewRole = () => {
   console.log('createNewRole')
   router.push('/newRole')
 }
-const selectChat = (id: string) => {
-  console.log('selectChat', id)
-  router.push(`/chat/${id}`)
+const selectChat = (conversationUuid: string) => {
+  console.log('selectChat', conversationUuid)
+  activeChatId.value = conversationUuid
+  router.push(`/chat/${conversationUuid}`)
 }
 const searchIconHandler = () => {
   emit('toggleSidebar')
@@ -212,6 +243,107 @@ const getUserInfo = async () => {
     }
   } catch (error) {
     console.log(error)
+  }
+}
+
+// 加载聊天历史记录
+const loadChatHistory = async () => {
+  if (isLoadingHistory.value) return
+
+  try {
+    isLoadingHistory.value = true
+    const res = await conversationApi.getConversationList()
+    if (res.code === 200) {
+      // 将后端数据转换为前端所需的格式
+      chatHistory.value = res.data.map(conversation => ({
+        id: conversation.conversationUuid,
+        conversationUuid: conversation.conversationUuid,
+        title: conversation.title || `与${conversation.characterName}的对话`,
+        lastTime: conversation.updateDate,
+        characterName: conversation.characterName,
+        characterAvatarUrl: conversation.characterAvatarUrl,
+        lastMessageSummary: conversation.lastMessageSummary,
+        status: conversation.status
+      }))
+    }
+  } catch (error) {
+    console.error('加载聊天历史失败:', error)
+    ElMessage.error('加载聊天历史失败')
+  } finally {
+    isLoadingHistory.value = false
+  }
+}
+
+// 删除对话
+const deleteChat = async (conversationUuid: string, event: Event) => {
+  event.stopPropagation() // 阻止事件冒泡
+
+  try {
+    const res = await conversationApi.deleteConversation(conversationUuid)
+    if (res.code === 200) {
+      ElMessage.success('对话已删除')
+      // 从列表中移除已删除的对话
+      chatHistory.value = chatHistory.value.filter(chat => chat.conversationUuid !== conversationUuid)
+      // 如果删除的是当前活跃的对话，清除活跃状态
+      if (activeChatId.value === conversationUuid) {
+        activeChatId.value = ''
+      }
+    }
+  } catch (error) {
+    console.error('删除对话失败:', error)
+    ElMessage.error('删除对话失败')
+  }
+}
+
+// 开始编辑标题
+const startEditTitle = (conversationUuid: string, currentTitle: string) => {
+  editingChatId.value = conversationUuid
+  editingTitle.value = currentTitle
+  nextTick(() => {
+    if (editInput.value) {
+      editInput.value.focus()
+      editInput.value.select()
+    }
+  })
+}
+
+// 取消编辑
+const cancelEditTitle = () => {
+  editingChatId.value = ''
+  editingTitle.value = ''
+}
+
+// 确认编辑标题
+const confirmEditTitle = async (conversationUuid: string) => {
+  if (!editingTitle.value.trim()) {
+    ElMessage.warning('标题不能为空')
+    return
+  }
+
+  if (editingTitle.value.trim() === chatHistory.value.find(chat => chat.conversationUuid === conversationUuid)?.title) {
+    // 标题没有变化，直接取消编辑
+    cancelEditTitle()
+    return
+  }
+
+  try {
+    const res = await conversationApi.updateConversationTitle(conversationUuid, {
+      title: editingTitle.value.trim()
+    })
+
+    if (res.code === 200) {
+      // 更新本地数据
+      const chatIndex = chatHistory.value.findIndex(chat => chat.conversationUuid === conversationUuid)
+      if (chatIndex !== -1) {
+        chatHistory.value[chatIndex].title = editingTitle.value.trim()
+      }
+      ElMessage.success('标题更新成功')
+    }
+  } catch (error) {
+    console.error('更新标题失败:', error)
+    ElMessage.error('更新标题失败')
+  } finally {
+    cancelEditTitle()
   }
 }
 </script>
@@ -388,6 +520,9 @@ const getUserInfo = async () => {
 
       &:hover {
         background-color: #f7f7f7;
+        .history-item-actions {
+          opacity: 1;
+        }
       }
 
       &.active {
@@ -402,6 +537,58 @@ const getUserInfo = async () => {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        cursor: text;
+      }
+
+      .history-item-edit-input {
+        flex: 1;
+        margin: 0 0.1rem;
+
+        :deep(.el-input__wrapper) {
+          padding: 0 0.08rem;
+          box-shadow: 0 0 0 1px #409eff inset;
+          background-color: #fff;
+        }
+      }
+
+      .history-item-actions {
+        opacity: 0;
+        transition: opacity 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.05rem;
+        margin-left: auto;
+
+        .action-btn {
+          width: 0.24rem;
+          height: 0.24rem;
+          padding: 0.02rem;
+          border-radius: 50%;
+          transition: all 0.2s;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.14rem;
+
+          &:hover {
+            transform: scale(1.1);
+          }
+        }
+
+        .rename-btn {
+          &:hover {
+            background-color: #409eff;
+            color: #fff;
+          }
+        }
+
+        .delete-btn {
+          &:hover {
+            background-color: #ff4d4f;
+            color: #fff;
+          }
+        }
       }
 
       .history-time {

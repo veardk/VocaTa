@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
           title: '新建角色'
         }
       }, {
-        path: '/chat/:id',
+        path: '/chat/:conversationUuid',
         component: () => import('@/views/ChatPage.vue'),
         meta: {
           title: '对话'
