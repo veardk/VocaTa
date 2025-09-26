@@ -86,7 +86,6 @@ public class CharacterResponse {
     /**
      * 总对话次数
      */
-    @JsonSerialize(using = ToStringSerializer.class)
     private Long chatCount;
 
     /**
