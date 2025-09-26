@@ -21,7 +21,7 @@ export const roleApi = {
   // 搜索角色
   searchRole(params: { keyword: string }) {
     return request({
-      url: '/api/client/character/search',
+      url: '/api/open/character/search',
       method: 'get',
       params
     })

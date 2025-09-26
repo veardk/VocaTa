@@ -136,12 +136,14 @@ const getSelectedRoleList = async () => {
 }
 const debouncedSearch = debounce(async () => {
   console.log('搜索:', searchInput.value)
-  if (searchInput.value) {
+  if (searchInput.value != '') {
     seachStatus.value = false
     const res = await roleApi.searchRole({ keyword: searchInput.value })
+    console.log(searchInput.value)
     roleList.value = res.data.list
   } else {
     seachStatus.value = true
+    getRoleList()
   }
 }, 500)
 const search = () => {
