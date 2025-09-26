@@ -122,7 +122,7 @@ ai:
     provider: ${AI_TTS_PROVIDER:xunfei}
 
 # 七牛云AI配置
-qiniu-ai:
+qiniu:
   ai:
     api-key: ${QINIU_AI_API_KEY:your-qiniu-ai-api-key}
     base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}

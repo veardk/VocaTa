@@ -36,16 +36,16 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Value("${qiniu-ai.ai.api-key}")
+    @Value("${qiniu.ai.api-key}")
     private String apiKey;
 
-    @Value("${qiniu-ai.ai.base-url:https://openai.qiniu.com/v1}")
+    @Value("${qiniu.ai.base-url:https://openai.qiniu.com/v1}")
     private String baseUrl;
 
-    @Value("${qiniu-ai.ai.default-model:x-ai/grok-4-fast}")
+    @Value("${qiniu.ai.default-model:x-ai/grok-4-fast}")
     private String defaultModel;
 
-    @Value("${qiniu-ai.ai.timeout:60}")
+    @Value("${qiniu.ai.timeout:60}")
     private int timeoutSeconds;
 
     private WebClient webClient;
