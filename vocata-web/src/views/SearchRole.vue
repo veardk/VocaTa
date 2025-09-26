@@ -335,6 +335,7 @@ onMounted(() => {
   align-self: center;
   height: 100%;
   position: absolute;
+  top: 0;
 }
 
 .card-front {
