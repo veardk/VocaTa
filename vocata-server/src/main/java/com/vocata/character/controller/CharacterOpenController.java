@@ -12,11 +12,13 @@ import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.common.result.ApiResponse;
 import com.vocata.common.result.PageResult;
+import com.vocata.user.service.UserFavoriteService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +31,9 @@ public class CharacterOpenController {
 
     @Autowired
     private CharacterService characterService;
+
+    @Autowired
+    private UserFavoriteService userFavoriteService;
 
     /**
      * 获取公开角色列表
@@ -123,6 +128,17 @@ public class CharacterOpenController {
                 .collect(Collectors.toList());
 
         return ApiResponse.success(responses);
+    }
+
+    /**
+     * 获取角色收藏数排行榜（公开接口）
+     * GET /api/open/character/favorite-ranking
+     */
+    @GetMapping("/favorite-ranking")
+    public ApiResponse<List<Map<String, Object>>> getFavoriteRanking(
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit) {
+        List<Map<String, Object>> result = userFavoriteService.getFavoriteRanking(limit);
+        return ApiResponse.success(result);
     }
 
     /**
