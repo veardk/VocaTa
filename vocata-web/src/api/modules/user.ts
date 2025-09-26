@@ -1,9 +1,9 @@
-import type { LoginParams, RegisterParams, Response } from '@/types/api'
+import type { LoginParams, RegisterParams, Response, LoginResponse } from '@/types/api'
 import request from '../request'
 
 export const userApi = {
   // 登录
-  login(params: LoginParams): Promise<Response<null>> {
+  login(params: LoginParams): Promise<Response<LoginResponse>> {
     return request.post('/api/client/auth/login', params)
   },
   // 注册

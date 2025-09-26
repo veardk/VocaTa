@@ -31,6 +31,12 @@ export interface RegisterParams {
   hasRead?: boolean
 }
 
+// 登录响应数据
+export interface LoginResponse {
+  token: string,
+  expiresIn: number
+}
+
 // 修改密码参数
 export interface ChangePasswordParams {
   oldPassword: string,

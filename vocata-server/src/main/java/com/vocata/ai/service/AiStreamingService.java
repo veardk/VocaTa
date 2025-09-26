@@ -235,7 +235,7 @@ public class AiStreamingService {
 
         // 设置模型配置
         UnifiedAiRequest.ModelConfig modelConfig = new UnifiedAiRequest.ModelConfig();
-        modelConfig.setModelName("gpt-3.5-turbo"); // 默认模型
+        modelConfig.setModelName("gemini-1.5-flash"); // 使用Gemini模型
         modelConfig.setTemperature(character.getTemperature() != null ?
                                   character.getTemperature().doubleValue() : 0.7);
         modelConfig.setContextWindow(contextWindow);
@@ -339,5 +339,348 @@ public class AiStreamingService {
         public void setMetadata(Map<String, Object> metadata) {
             this.metadata = metadata;
         }
+    }
+
+    /**
+     * 实时处理单个音频块 - STT识别
+     * 用于WebSocket实时语音处理
+     */
+    public Mono<SttResult> processAudioChunkToText(String conversationUuid, String userId, byte[] audioData) {
+        try {
+            UUID uuid = UUID.fromString(conversationUuid);
+            Long userIdLong = Long.parseLong(userId);
+
+            // 验证对话权限
+            if (!conversationService.validateConversationOwnership(uuid, userIdLong)) {
+                return Mono.error(new RuntimeException("无权限访问此对话"));
+            }
+
+            Conversation conversation = conversationService.getConversationByUuid(uuid);
+            Character character = characterMapper.selectById(conversation.getCharacterId());
+
+            if (character == null) {
+                return Mono.error(new RuntimeException("角色不存在"));
+            }
+
+            // 配置STT
+            SttClient.SttConfig sttConfig = new SttClient.SttConfig(character.getLanguage());
+
+            // 处理单个音频块
+            return sttClient.streamRecognize(Flux.just(audioData), sttConfig)
+                    .filter(result -> result.getText() != null && !result.getText().trim().isEmpty())
+                    .next() // 获取第一个结果
+                    .map(sttClientResult -> new SttResult(
+                            sttClientResult.getText(),
+                            sttClientResult.isFinal(),
+                            sttClientResult.getConfidence()
+                    ))
+                    .doOnNext(result -> logger.debug("音频块STT识别: {}", result.getText()));
+
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("音频块处理失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 处理文本到角色回复 - LLM处理
+     */
+    public Mono<LlmResponse> processTextToCharacterResponse(String conversationUuid, String userId, String text) {
+        try {
+            UUID uuid = UUID.fromString(conversationUuid);
+            Long userIdLong = Long.parseLong(userId);
+
+            Conversation conversation = conversationService.getConversationByUuid(uuid);
+            Character character = characterMapper.selectById(conversation.getCharacterId());
+
+            // 保存用户消息
+            saveMessage(conversation.getId(), text, SenderType.USER, userIdLong)
+                    .subscribe(msg -> logger.debug("已保存用户消息: {}", msg.getId()));
+
+            // 构建LLM请求
+            UnifiedAiRequest llmRequest = buildLlmRequest(conversation, character, text);
+
+            // 调用LLM并收集完整响应
+            return llmProvider.streamChat(llmRequest)
+                    .reduce("", (accumulated, chunk) -> accumulated + chunk.getContent())
+                    .map(fullResponse -> {
+                        // 保存AI消息
+                        saveMessage(conversation.getId(), fullResponse, SenderType.CHARACTER, userIdLong)
+                                .subscribe(msg -> logger.debug("已保存AI消息: {}", msg.getId()));
+
+                        return new LlmResponse(fullResponse, character.getName(), true);
+                    })
+                    .doOnNext(response -> logger.debug("LLM完整回复: {}", response.getText()));
+
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("LLM处理失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 处理文本到语音 - TTS处理
+     */
+    public Mono<byte[]> processTextToSpeech(String text) {
+        // 使用默认TTS配置
+        TtsClient.TtsConfig ttsConfig = new TtsClient.TtsConfig("default", "zh-CN");
+
+        return ttsClient.streamSynthesize(Flux.just(text), ttsConfig)
+                .reduce(new byte[0], (accumulated, chunk) -> {
+                    byte[] combined = new byte[accumulated.length + chunk.length];
+                    System.arraycopy(accumulated, 0, combined, 0, accumulated.length);
+                    System.arraycopy(chunk, 0, combined, accumulated.length, chunk.length);
+                    return combined;
+                })
+                .doOnNext(audioData -> logger.debug("TTS生成音频: {} bytes", audioData.length));
+    }
+
+    /**
+     * STT结果封装类
+     */
+    public static class SttResult {
+        private String text;
+        private boolean isFinal;
+        private double confidence;
+
+        public SttResult(String text, boolean isFinal, double confidence) {
+            this.text = text;
+            this.isFinal = isFinal;
+            this.confidence = confidence;
+        }
+
+        // Getters
+        public String getText() { return text; }
+        public boolean isFinal() { return isFinal; }
+        public double getConfidence() { return confidence; }
+    }
+
+    /**
+     * LLM响应封装类
+     */
+    public static class LlmResponse {
+        private String text;
+        private String characterName;
+        private boolean isComplete;
+
+        public LlmResponse(String text, String characterName, boolean isComplete) {
+            this.text = text;
+            this.characterName = characterName;
+            this.isComplete = isComplete;
+        }
+
+        // Getters
+        public String getText() { return text; }
+        public String getCharacterName() { return characterName; }
+        public boolean isComplete() { return isComplete; }
+    }
+
+    /**
+     * WebSocket专用：处理文字消息的完整链路
+     * 跳过STT步骤，直接执行 LLM → TTS 处理，返回双重响应（文字流 + 音频流）
+     *
+     * @param conversationUuid 对话UUID字符串
+     * @param userId 用户ID字符串
+     * @param textMessage 用户输入的文字消息
+     * @return WebSocket格式的响应流（包含文字流和音频流）
+     */
+    public Flux<Map<String, Object>> processTextMessage(String conversationUuid,
+                                                        String userId,
+                                                        String textMessage) {
+        logger.info("【文字消息处理】开始处理 - 对话: {}, 用户: {}, 文字: {}", conversationUuid, userId, textMessage);
+
+        try {
+            UUID uuid = UUID.fromString(conversationUuid);
+            Long userIdLong = Long.parseLong(userId);
+
+            // 验证对话权限
+            if (!conversationService.validateConversationOwnership(uuid, userIdLong)) {
+                Map<String, Object> errorResponse = Map.of(
+                    "type", "error",
+                    "error", "无权限访问此对话",
+                    "timestamp", System.currentTimeMillis()
+                );
+                return Flux.just(errorResponse);
+            }
+
+            Conversation conversation = conversationService.getConversationByUuid(uuid);
+            Character character = characterMapper.selectById(conversation.getCharacterId());
+
+            if (character == null) {
+                Map<String, Object> errorResponse = Map.of(
+                    "type", "error",
+                    "error", "角色不存在",
+                    "timestamp", System.currentTimeMillis()
+                );
+                return Flux.just(errorResponse);
+            }
+
+            logger.info("【LLM阶段】开始处理用户文字消息: {}", textMessage);
+
+            // 保存用户消息
+            saveMessage(conversation.getId(), textMessage, SenderType.USER, userIdLong)
+                .subscribe(msg -> logger.debug("已保存用户文字消息: {}", msg.getId()));
+
+            // 构建LLM请求
+            UnifiedAiRequest llmRequest = buildLlmRequest(conversation, character, textMessage);
+
+            // 收集完整的LLM响应用于TTS
+            StringBuilder fullResponseBuilder = new StringBuilder();
+
+            return llmProvider.streamChat(llmRequest)
+                .doOnNext(chunk -> {
+                    logger.debug("【LLM阶段】收到文字流块: {}", chunk.getContent());
+                    fullResponseBuilder.append(chunk.getContent());
+                })
+                .map(chunk -> {
+                    // 实时返回文字流
+                    Map<String, Object> textResponse = new HashMap<>();
+                    textResponse.put("type", "text_chunk");
+                    textResponse.put("timestamp", System.currentTimeMillis());
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("text", chunk.getContent());
+                    payload.put("accumulated_text", chunk.getAccumulatedContent());
+                    payload.put("is_final", chunk.getIsFinal());
+                    payload.put("character_name", character.getName());
+                    textResponse.put("payload", payload);
+                    return textResponse;
+                })
+                .concatWith(
+                    // LLM完成后，处理TTS
+                    Mono.fromCallable(() -> fullResponseBuilder.toString())
+                        .filter(fullText -> !fullText.trim().isEmpty())
+                        .doOnNext(fullText -> {
+                            logger.info("【TTS阶段】开始处理完整回复: {}", fullText);
+                            // 保存AI消息
+                            saveMessage(conversation.getId(), fullText, SenderType.CHARACTER, userIdLong)
+                                .subscribe(msg -> logger.debug("已保存AI回复消息: {}", msg.getId()));
+                        })
+                        .flatMapMany(fullText -> {
+                            // TTS处理
+                            TtsClient.TtsConfig ttsConfig = new TtsClient.TtsConfig(
+                                character.getVoiceId(), character.getLanguage());
+
+                            return ttsClient.streamSynthesize(Flux.just(fullText), ttsConfig)
+                                .doOnNext(audioData -> logger.debug("【TTS阶段】生成音频块: {} bytes", audioData.length))
+                                .map(audioData -> {
+                                    Map<String, Object> audioResponse = new HashMap<>();
+                                    audioResponse.put("type", "audio_chunk");
+                                    audioResponse.put("timestamp", System.currentTimeMillis());
+                                    audioResponse.put("audio_data", audioData);
+                                    return audioResponse;
+                                })
+                                .concatWith(Mono.fromCallable(() -> {
+                                    // 发送完成信号
+                                    Map<String, Object> completeResponse = new HashMap<>();
+                                    completeResponse.put("type", "complete");
+                                    completeResponse.put("timestamp", System.currentTimeMillis());
+                                    completeResponse.put("message", "处理完成");
+                                    logger.info("【处理完成】文字消息处理链路完成");
+                                    return completeResponse;
+                                }));
+                        })
+                )
+                .onErrorResume(error -> {
+                    logger.error("文字消息处理失败", error);
+                    Map<String, Object> errorResponse = Map.of(
+                        "type", "error",
+                        "error", error.getMessage(),
+                        "timestamp", System.currentTimeMillis()
+                    );
+                    return Flux.just(errorResponse);
+                });
+
+        } catch (Exception e) {
+            logger.error("文字消息参数解析失败", e);
+            Map<String, Object> errorResponse = Map.of(
+                "type", "error",
+                "error", "无效的参数: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return Flux.just(errorResponse);
+        }
+    }
+
+    /**
+     * WebSocket专用：处理语音消息的完整链路
+     * 接收音频流，执行STT → LLM → TTS处理，返回WebSocket格式的响应
+     *
+     * @param conversationUuid 对话UUID字符串
+     * @param userId 用户ID字符串
+     * @param audioStream 音频数据流
+     * @return WebSocket格式的响应流
+     */
+    public Flux<Map<String, Object>> processVoiceMessage(String conversationUuid,
+                                                         String userId,
+                                                         Flux<byte[]> audioStream) {
+        logger.info("WebSocket处理语音消息，对话: {}, 用户: {}", conversationUuid, userId);
+
+        try {
+            UUID uuid = UUID.fromString(conversationUuid);
+            Long userIdLong = Long.parseLong(userId);
+
+            return processAudioInput(uuid, audioStream, userIdLong)
+                    .map(this::convertToWebSocketResponse)
+                    .onErrorResume(error -> {
+                        logger.error("语音处理失败", error);
+                        Map<String, Object> errorResponse = Map.of(
+                            "type", "error",
+                            "error", error.getMessage(),
+                            "timestamp", System.currentTimeMillis()
+                        );
+                        return Flux.just(errorResponse);
+                    });
+        } catch (Exception e) {
+            logger.error("参数解析失败", e);
+            Map<String, Object> errorResponse = Map.of(
+                "type", "error",
+                "error", "无效的参数: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return Flux.just(errorResponse);
+        }
+    }
+
+    /**
+     * 将内部AI响应转换为WebSocket响应格式
+     */
+    private Map<String, Object> convertToWebSocketResponse(AiStreamingResponse response) {
+        Map<String, Object> webSocketResponse = new HashMap<>();
+        webSocketResponse.put("timestamp", System.currentTimeMillis());
+
+        switch (response.getType()) {
+            case STT_RESULT:
+                webSocketResponse.put("type", "stt_result");
+                Map<String, Object> sttPayload = new HashMap<>();
+                sttPayload.put("text", response.getSttResult().getText());
+                sttPayload.put("confidence", response.getSttResult().getConfidence());
+                sttPayload.put("is_final", response.getSttResult().isFinal());
+                webSocketResponse.put("payload", sttPayload);
+                break;
+
+            case LLM_CHUNK:
+                webSocketResponse.put("type", "llm_chunk");
+                Map<String, Object> llmPayload = new HashMap<>();
+                llmPayload.put("text", response.getLlmChunk().getContent());
+                llmPayload.put("accumulated_text", response.getLlmChunk().getAccumulatedContent());
+                llmPayload.put("is_final", response.getLlmChunk().getIsFinal());
+                webSocketResponse.put("payload", llmPayload);
+                break;
+
+            case AUDIO_CHUNK:
+                webSocketResponse.put("type", "audio_chunk");
+                webSocketResponse.put("audio_data", response.getAudioData());
+                break;
+
+            case ERROR:
+                webSocketResponse.put("type", "error");
+                webSocketResponse.put("error", response.getError());
+                break;
+
+            case COMPLETE:
+                webSocketResponse.put("type", "complete");
+                webSocketResponse.put("message", "处理完成");
+                break;
+        }
+
+        return webSocketResponse;
     }
 }

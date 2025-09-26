@@ -52,4 +52,19 @@ public interface ConversationService {
      * 删除对话（软删除）
      */
     void deleteConversation(UUID conversationUuid, Long userId);
+
+    /**
+     * 基于首次消息自动生成对话标题
+     * @param conversationId 对话ID
+     * @param firstMessage 首次用户消息内容
+     */
+    void generateConversationTitleAsync(Long conversationId, String firstMessage);
+
+    /**
+     * 更新对话标题
+     * @param conversationUuid 对话UUID
+     * @param userId 用户ID
+     * @param newTitle 新标题
+     */
+    void updateConversationTitle(UUID conversationUuid, Long userId, String newTitle);
 }
