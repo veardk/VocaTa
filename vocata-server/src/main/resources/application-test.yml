@@ -111,7 +111,7 @@ qiniu:
   region: ${QINIU_REGION:huadong}
   # AI服务配置
   ai:
-    api-key: ${QINIU_AI_API_KEY}
+    api-key: ${QINIU_AI_API_KEY:sk-693afd3931f58a166e2a0a4ef6bcec669e334ce3893e86806b0b716b6ef5e956}
     base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
     default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
     timeout: ${QINIU_AI_TIMEOUT:60}
@@ -119,7 +119,7 @@ qiniu:
 # Gemini配置 - 测试环境
 gemini:
   api:
-    key: ${GEMINI_API_KEY}
+    key: ${GEMINI_API_KEY:AIzaSyBHEceUfr-g1loSqCRm_gTichJCDrn_QHQ}
     base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
     default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     timeout: ${GEMINI_TIMEOUT:60}
@@ -127,7 +127,7 @@ gemini:
 # OpenAI配置 - 测试环境
 openai:
   api:
-    key: ${OPENAI_API_KEY}
+    key: ${OPENAI_API_KEY:mock-key}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
     timeout: ${OPENAI_TIMEOUT:60}
