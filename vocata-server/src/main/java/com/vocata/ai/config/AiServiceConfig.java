@@ -53,7 +53,7 @@ public class AiServiceConfig {
         }
 
         // 如果首选提供者不可用，按优先级选择可用的提供者
-        String[] providerPriority = {"gemini", "openai", "mock"};
+        String[] providerPriority = {"qiniu", "gemini", "openai", "mock"};
 
         for (String providerName : providerPriority) {
             LlmProvider provider = findProviderByName(providers, providerName);
@@ -85,7 +85,7 @@ public class AiServiceConfig {
         }
 
         // 如果首选提供者不可用，按优先级选择可用的提供者
-        String[] sttProviderPriority = {"xunfei", "mock"};
+        String[] sttProviderPriority = {"qiniu", "xunfei", "mock"};
 
         for (String providerName : sttProviderPriority) {
             SttClient client = findSttClientByName(clients, providerName);
@@ -117,7 +117,7 @@ public class AiServiceConfig {
         }
 
         // 如果首选提供者不可用，按优先级选择可用的提供者
-        String[] ttsProviderPriority = {"volcan", "mock"};
+        String[] ttsProviderPriority = {"xunfei", "volcan", "mock"};
 
         for (String providerName : ttsProviderPriority) {
             TtsClient client = findTtsClientByName(clients, providerName);

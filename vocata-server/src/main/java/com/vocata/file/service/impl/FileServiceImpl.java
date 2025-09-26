@@ -97,6 +97,46 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    public FileUploadResponse uploadAudioFile(byte[] audioData, String fileName, String fileType, String contentType) {
+        // 验证音频数据
+        validateAudioFile(audioData, fileName, contentType);
+
+        try {
+            // 生成唯一文件名
+            String uniqueFileName = generateAudioFileName(fileName, fileType);
+
+            // 获取上传token
+            String uploadToken = auth.uploadToken(qiniuConfig.getBucket());
+
+            // 上传音频数据
+            Response response = uploadManager.put(audioData, uniqueFileName, uploadToken);
+
+            if (!response.isOK()) {
+                log.error("音频文件上传失败，响应: {}", response.toString());
+                throw new BizException(ApiCode.FILE_UPLOAD_FAILED);
+            }
+
+            // 构建文件访问URL
+            String fileUrl = qiniuConfig.getDomain() + "/" + uniqueFileName;
+
+            log.info("音频文件上传成功: {}, 访问 URL: {}", uniqueFileName, fileUrl);
+
+            return FileUploadResponse.builder()
+                    .fileName(uniqueFileName)
+                    .originalFileName(fileName)
+                    .fileSize((long) audioData.length)
+                    .contentType(contentType)
+                    .fileUrl(fileUrl)
+                    .uploadTime(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                    .build();
+
+        } catch (Exception e) {
+            log.error("音频文件上传异常: {}", fileName, e);
+            throw new BizException(ApiCode.FILE_UPLOAD_FAILED);
+        }
+    }
+
+    @Override
     public boolean deleteFile(String fileName) {
         try {
             Response response = bucketManager.delete(qiniuConfig.getBucket(), fileName);
@@ -106,6 +146,10 @@ public class FileServiceImpl implements FileService {
             return false;
         }
     }
+
+    /**
+     * 用于模块化要求，将文件验证和名称生成逻辑抽离
+     */
 
     /**
      * 验证上传文件
@@ -126,6 +170,54 @@ public class FileServiceImpl implements FileService {
         if (StringUtils.isBlank(contentType) || !ALLOWED_IMAGE_TYPES.contains(contentType.toLowerCase())) {
             throw new BizException(ApiCode.FILE_TYPE_NOT_ALLOWED);
         }
+    }
+
+    /**
+     * 验证音频文件
+     */
+    private void validateAudioFile(byte[] audioData, String fileName, String contentType) {
+        // 检查数据是否为空
+        if (audioData == null || audioData.length == 0) {
+            throw new BizException(ApiCode.FILE_EMPTY);
+        }
+
+        // 检查文件大小 (10MB 限制，音频文件通常较大)
+        if (audioData.length > 10 * 1024 * 1024) {
+            throw new BizException(ApiCode.FILE_SIZE_EXCEEDED);
+        }
+
+        // 检查文件名
+        if (StringUtils.isBlank(fileName)) {
+            throw new BizException(ApiCode.FILE_EMPTY);
+        }
+
+        // 检查内容类型 (支持常见音频格式)
+        if (StringUtils.isBlank(contentType)) {
+            // 如果没有提供contentType，根据文件扩展名推断
+            String extension = getFileExtension(fileName).toLowerCase();
+            if (!isAllowedAudioExtension(extension)) {
+                throw new BizException(ApiCode.FILE_TYPE_NOT_ALLOWED);
+            }
+        }
+    }
+
+    /**
+     * 检查是否为允许的音频扩展名
+     */
+    private boolean isAllowedAudioExtension(String extension) {
+        List<String> allowedExtensions = Arrays.asList(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac");
+        return allowedExtensions.contains(extension);
+    }
+
+    /**
+     * 获取文件扩展名
+     */
+    private String getFileExtension(String fileName) {
+        int dotIndex = fileName.lastIndexOf(".");
+        if (dotIndex > 0 && dotIndex < fileName.length() - 1) {
+            return fileName.substring(dotIndex);
+        }
+        return "";
     }
 
     /**
@@ -150,6 +242,27 @@ public class FileServiceImpl implements FileService {
 
         return String.format("%s/%s/%s%s",
                 StringUtils.isNotBlank(fileType) ? fileType : "common",
+                dateStr,
+                uuid,
+                extension);
+    }
+
+    /**
+     * 生成音频文件名
+     */
+    private String generateAudioFileName(String originalFileName, String fileType) {
+        // 获取文件扩展名
+        String extension = getFileExtension(originalFileName);
+        if (StringUtils.isBlank(extension)) {
+            extension = ".mp3"; // 默认扩展名
+        }
+
+        // 生成唯一文件名: fileType/yyyyMMdd/uuid.ext
+        String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String uuid = IdUtil.simpleUUID();
+
+        return String.format("%s/%s/%s%s",
+                StringUtils.isNotBlank(fileType) ? fileType : "audio",
                 dateStr,
                 uuid,
                 extension);

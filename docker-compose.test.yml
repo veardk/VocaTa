@@ -46,7 +46,20 @@ services:
       # 邮箱配置
       - EMAIL_USER_NAME=${EMAIL_USER_NAME}
       - EMAIL_USER_PASSWORD=${EMAIL_USER_PASSWORD}
-      - TZ=Asia/Shanghai
+      # 邮件服务配置
+      - MAIL_HOST=${MAIL_HOST:smtp.163.com}
+      - MAIL_PORT=${MAIL_PORT:465}
+      - MAIL_USERNAME=${EMAIL_USER_NAME}
+      - MAIL_PASSWORD=${EMAIL_USER_PASSWORD}
+      # AI服务配置
+      - AI_LLM_PROVIDER=${AI_LLM_PROVIDER:-qiniu}
+      - QINIU_AI_API_KEY=${QINIU_AI_API_KEY}
+      - QINIU_AI_BASE_URL=${QINIU_AI_BASE_URL:-https://openai.qiniu.com/v1}
+      - QINIU_AI_MODEL=${QINIU_AI_MODEL:-x-ai/grok-4-fast}
+      - QINIU_AI_TIMEOUT=${QINIU_AI_TIMEOUT:-60}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
     volumes:
       - server-logs:/var/log/vocata
       - server-uploads:/app/uploads

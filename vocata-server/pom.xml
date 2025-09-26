@@ -45,6 +45,12 @@
             <artifactId>spring-webflux</artifactId>
         </dependency>
 
+        <!-- Reactor Netty HTTP for WebSocket support -->
+        <dependency>
+            <groupId>io.projectreactor.netty</groupId>
+            <artifactId>reactor-netty-http</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver-dns-native-macos</artifactId>

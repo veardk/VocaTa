@@ -31,13 +31,31 @@ spring:
           max-idle: 8
           min-idle: 2
 
-# 七牛云配置 - 生产环境
-qiniu:
-  access-key: ${QINIU_ACCESS_KEY_PROD}
-  secret-key: ${QINIU_SECRET_KEY_PROD}
-  bucket: ${QINIU_BUCKET_PROD:vocata-files-prod}
-  domain: ${QINIU_DOMAIN_PROD:https://files.vocata.com}
-  region: ${QINIU_REGION_PROD:huadong}
+  # 邮件配置 - 生产环境
+  mail:
+    host: smtp.163.com
+    port: 465
+    username: ${EMAIL_USER_NAME}
+    password: ${EMAIL_USER_PASSWORD}
+    protocol: smtp
+    test-connection: false
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          ssl:
+            enable: true
+          socketFactory:
+            port: 465
+            class: javax.net.ssl.SSLSocketFactory
+            fallback: false
+          connectiontimeout: 30000
+          timeout: 30000
+          writetimeout: 30000
 
 # MyBatis Plus配置 (生产环境关闭SQL日志)
 mybatis-plus:
@@ -82,6 +100,45 @@ sa-token:
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
     database: 1
+
+# AI服务配置 - 生产环境
+ai:
+  llm:
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 生产环境默认使用七牛云AI
+  stt:
+    provider: ${AI_STT_PROVIDER:xunfei}
+  tts:
+    provider: ${AI_TTS_PROVIDER:volcan}
+
+# 七牛云配置 - 生产环境
+qiniu:
+  access-key: ${QINIU_ACCESS_KEY_PROD}
+  secret-key: ${QINIU_SECRET_KEY_PROD}
+  bucket: ${QINIU_BUCKET_PROD:vocata-files-prod}
+  domain: ${QINIU_DOMAIN_PROD:https://files.vocata.com}
+  region: ${QINIU_REGION_PROD:huadong}
+  # AI服务配置
+  ai:
+    api-key: ${QINIU_AI_API_KEY}
+    base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
+    default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
+    timeout: ${QINIU_AI_TIMEOUT:60}
+
+# Gemini配置 - 生产环境
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    timeout: ${GEMINI_TIMEOUT:60}
+
+# OpenAI配置 - 生产环境
+openai:
+  api:
+    key: ${OPENAI_API_KEY}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
+    timeout: ${OPENAI_TIMEOUT:60}
 
 # 日志配置
 logging:

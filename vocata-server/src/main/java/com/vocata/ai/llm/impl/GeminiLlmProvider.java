@@ -38,7 +38,7 @@ public class GeminiLlmProvider implements LlmProvider, InitializingBean {
     @Value("${gemini.api.base-url:https://generativelanguage.googleapis.com}")
     private String baseUrl;
 
-    @Value("${gemini.api.default-model:gemini-1.5-flash}")
+    @Value("${gemini.api.default-model:gemini-2.5-flash-lite}")
     private String defaultModel;
 
     @Value("${gemini.api.timeout:60}")
@@ -55,6 +55,8 @@ public class GeminiLlmProvider implements LlmProvider, InitializingBean {
     @Override
     public String[] getSupportedModels() {
         return new String[]{
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
             "gemini-1.5-flash",
             "gemini-1.5-pro",
             "gemini-1.0-pro"
@@ -121,11 +123,8 @@ public class GeminiLlmProvider implements LlmProvider, InitializingBean {
                         .retrieve()
                         .bodyToFlux(String.class)
                         .timeout(Duration.ofSeconds(timeoutSeconds))
-                        .window(Duration.ofMillis(100))  // 每100ms创建一个窗口
-                        .flatMap(window -> window.collectList())  // 收集窗口内的数据
-                        .filter(lines -> !lines.isEmpty())
-                        .map(lines -> String.join("", lines))  // 合并为完整JSON
-                        .flatMapIterable(this::parseGeminiStreamResponse)
+                        .reduce("", (accumulated, chunk) -> accumulated + chunk)  // 累积所有数据块
+                        .flatMapMany(this::parseGeminiStreamResponse)
                         .doOnError(error -> logger.error("Gemini API调用失败: {}", error.getMessage()))
                         .onErrorResume(error -> {
                             UnifiedAiStreamChunk errorChunk = new UnifiedAiStreamChunk();
@@ -222,9 +221,12 @@ public class GeminiLlmProvider implements LlmProvider, InitializingBean {
         return requestBody;
     }
 
-    private List<UnifiedAiStreamChunk> parseGeminiStreamResponse(String completeJson) {
+    private Flux<UnifiedAiStreamChunk> parseGeminiStreamResponse(String completeJson) {
         try {
+            logger.debug("开始解析Gemini流式响应，数据长度: {}", completeJson.length());
+
             List<UnifiedAiStreamChunk> chunks = new ArrayList<>();
+            String accumulatedContent = "";
 
             // Gemini API 返回数组格式的多个响应块
             if (completeJson.startsWith("[")) {
@@ -232,26 +234,108 @@ public class GeminiLlmProvider implements LlmProvider, InitializingBean {
                 List<Map<String, Object>> responseArray = objectMapper.readValue(completeJson, List.class);
 
                 for (Map<String, Object> responseObj : responseArray) {
-                    UnifiedAiStreamChunk chunk = parseGeminiSingleResponse(responseObj);
-                    if (chunk != null) {
+                    String textContent = extractTextFromResponse(responseObj);
+                    if (textContent != null && !textContent.trim().isEmpty()) {
+                        accumulatedContent += textContent;
+
+                        UnifiedAiStreamChunk chunk = new UnifiedAiStreamChunk();
+                        chunk.setContent(textContent);
+                        chunk.setAccumulatedContent(accumulatedContent);
+
+                        // 检查是否为最后一个响应
+                        boolean isLast = isLastResponse(responseObj) ||
+                            (responseArray.indexOf(responseObj) == responseArray.size() - 1);
+                        chunk.setIsFinal(isLast);
+
                         chunks.add(chunk);
+                        logger.debug("解析到文本内容: {} (累积长度: {})", textContent, accumulatedContent.length());
                     }
                 }
             } else {
                 // 单个对象格式
                 @SuppressWarnings("unchecked")
                 Map<String, Object> responseObj = objectMapper.readValue(completeJson, Map.class);
-                UnifiedAiStreamChunk chunk = parseGeminiSingleResponse(responseObj);
-                if (chunk != null) {
+                String textContent = extractTextFromResponse(responseObj);
+                if (textContent != null && !textContent.trim().isEmpty()) {
+                    UnifiedAiStreamChunk chunk = new UnifiedAiStreamChunk();
+                    chunk.setContent(textContent);
+                    chunk.setAccumulatedContent(textContent);
+                    chunk.setIsFinal(isLastResponse(responseObj));
                     chunks.add(chunk);
                 }
             }
 
-            return chunks;
+            logger.info("Gemini流式响应解析完成，生成{}个chunk，总内容长度: {}", chunks.size(), accumulatedContent.length());
+            return Flux.fromIterable(chunks);
 
         } catch (Exception e) {
             logger.error("解析Gemini流式响应失败: {}", e.getMessage());
-            return Collections.emptyList();
+            logger.debug("失败的响应内容: {}", completeJson);
+            UnifiedAiStreamChunk errorChunk = new UnifiedAiStreamChunk();
+            errorChunk.setContent("抱歉，AI服务暂时不可用，请稍后再试。");
+            errorChunk.setAccumulatedContent("抱歉，AI服务暂时不可用，请稍后再试。");
+            errorChunk.setIsFinal(true);
+            return Flux.just(errorChunk);
+        }
+    }
+
+    /**
+     * 从响应对象中提取文本内容
+     */
+    private String extractTextFromResponse(Map<String, Object> response) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
+
+            if (candidates == null || candidates.isEmpty()) {
+                return null;
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> candidate = candidates.get(0);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> content = (Map<String, Object>) candidate.get("content");
+
+            if (content == null) {
+                return null;
+            }
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
+
+            if (parts == null || parts.isEmpty()) {
+                return null;
+            }
+
+            return (String) parts.get(0).get("text");
+
+        } catch (Exception e) {
+            logger.debug("提取文本内容失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 检查是否为最后一个响应
+     */
+    private boolean isLastResponse(Map<String, Object> response) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
+
+            if (candidates == null || candidates.isEmpty()) {
+                return false;
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> candidate = candidates.get(0);
+
+            String finishReason = (String) candidate.get("finishReason");
+            return "STOP".equals(finishReason) || "MAX_TOKENS".equals(finishReason);
+
+        } catch (Exception e) {
+            return false;
         }
     }
 
