@@ -73,27 +73,92 @@
         </button>
       </div>
 
-      <!-- 音频通话界面 -->
-      <div class="video-chat" v-if="isAudioCallActive">
-        <div class="ai-avatar">
-          <div class="avatar" :class="{ pulsing: aiChat?.playing }"></div>
-          <div class="character-name">{{ getCharacterName() }}</div>
-          <div v-if="currentSTTText" class="stt-display">
-            <div class="stt-label">您说的是：</div>
+      <!-- ChatGPT风格音频通话界面 -->
+      <div class="chatgpt-voice-chat" v-if="isAudioCallActive">
+        <!-- 顶部状态栏 -->
+        <div class="voice-header">
+          <div class="connection-indicator">
+            <div class="status-dot" :class="{ connected: isAIConnected }"></div>
+            <span class="status-text">{{ isAIConnected ? '已连接' : '连接中...' }}</span>
+          </div>
+          <button class="close-btn" @click="stopAudioCall">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+
+        <!-- 中央对话区域 -->
+        <div class="voice-conversation-area">
+          <!-- AI头像和状态 -->
+          <div class="ai-section">
+            <div class="ai-avatar-container">
+              <div class="ai-avatar" :class="{ speaking: aiChat?.playing, thinking: isAIThinking }">
+                <div class="avatar-inner"></div>
+                <div class="voice-waves" v-if="aiChat?.playing">
+                  <div class="wave" v-for="i in 3" :key="i" :style="{ animationDelay: i * 0.1 + 's' }"></div>
+                </div>
+              </div>
+              <div class="ai-name">{{ getCharacterName() }}</div>
+              <div class="ai-status">
+                <span v-if="isAIThinking">正在思考...</span>
+                <span v-else-if="aiChat?.playing">正在说话</span>
+                <span v-else>等待中</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 用户部分 -->
+          <div class="user-section">
+            <div class="user-avatar-container">
+              <div class="user-avatar" :class="{ listening: aiChat?.recording, voice_active: vadActive }">
+                <div class="avatar-inner"></div>
+                <!-- VAD可视化 -->
+                <div class="vad-indicator" v-if="vadActive">
+                  <div class="vad-ring"></div>
+                  <div class="vad-pulse"></div>
+                </div>
+                <!-- 麦克风状态 -->
+                <div class="mic-icon" v-if="aiChat?.recording">
+                  <el-icon><Microphone /></el-icon>
+                </div>
+              </div>
+              <div class="user-name">您</div>
+              <div class="user-status">
+                <span v-if="vadActive">检测到语音</span>
+                <span v-else-if="aiChat?.recording">点击说话</span>
+                <span v-else>麦克风已关闭</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STT实时显示 -->
+        <div class="stt-live-display" v-if="currentSTTText">
+          <div class="stt-content">
+            <div class="stt-label">您正在说：</div>
             <div class="stt-text">{{ currentSTTText }}</div>
           </div>
         </div>
-        <div class="control">
-          <div
-            class="control-item mic"
-            :class="{ active: aiChat?.recording, muted: !aiChat?.recording }"
+
+        <!-- 底部控制区域 -->
+        <div class="voice-controls">
+          <button
+            class="voice-btn mic-btn"
+            :class="{
+              active: aiChat?.recording,
+              voice_active: vadActive,
+              disabled: !isAIConnected
+            }"
             @click="toggleMicrophone"
+            :disabled="!isAIConnected"
           >
-            <el-icon><Microphone /></el-icon>
-          </div>
-          <div class="control-item close" @click="stopAudioCall">
-            <el-icon><Close /></el-icon>
-          </div>
+            <div class="btn-icon">
+              <el-icon v-if="aiChat?.recording"><Microphone /></el-icon>
+              <el-icon v-else><MicrophoneSlash /></el-icon>
+            </div>
+            <div class="btn-text">
+              {{ aiChat?.recording ? (vadActive ? '语音活跃' : '点击说话') : '开启麦克风' }}
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -130,6 +195,10 @@ const isAIConnected = ref(false) // 新增：追踪连接状态
 const isAIThinking = ref(false)
 const currentSTTText = ref('')
 const currentStreamingMessage = ref<ChatMessage | null>(null)
+
+// VAD相关状态
+const vadActive = ref(false)
+const vadCheckInterval = ref<number | null>(null)
 
 // 打字机效果相关状态
 const typewriterIntervals = ref<Map<number, number>>(new Map())
@@ -572,6 +641,9 @@ const startAudioCall = async () => {
     await aiChat.value.startAudioCall()
     isAudioCallActive.value = true
 
+    // 启动VAD状态监控
+    startVADMonitoring()
+
   } catch (error) {
     console.error('❌ 启动音频通话失败:', error)
     ElMessage.error('无法启动音频通话: ' + (error as Error).message)
@@ -586,6 +658,9 @@ const stopAudioCall = () => {
     aiChat.value.stopAudioCall()
     isAudioCallActive.value = false
     currentSTTText.value = ''
+
+    // 停止VAD监控
+    stopVADMonitoring()
 
   } catch (error) {
     console.error('❌ 停止音频通话失败:', error)
@@ -833,6 +908,29 @@ const clearAllTypewriterEffects = () => {
 
   // 清理同步播放状态
   clearSyncPlaybackState()
+}
+
+// VAD监控相关函数
+const startVADMonitoring = () => {
+  if (vadCheckInterval.value) {
+    clearInterval(vadCheckInterval.value)
+  }
+
+  vadCheckInterval.value = window.setInterval(() => {
+    // 检查aiChat的audioManager是否有VAD状态
+    if (aiChat.value && (aiChat.value as any).audioManager) {
+      const audioManager = (aiChat.value as any).audioManager
+      vadActive.value = audioManager.voiceActive || false
+    }
+  }, 100) // 每100ms检查一次VAD状态
+}
+
+const stopVADMonitoring = () => {
+  if (vadCheckInterval.value) {
+    clearInterval(vadCheckInterval.value)
+    vadCheckInterval.value = null
+  }
+  vadActive.value = false
 }
 
 // 格式化时间
@@ -1223,7 +1321,8 @@ const formatTime = (dateString: string) => {
   100% { transform: scale(1.4); opacity: 0; }
 }
 
-.video-chat {
+// ChatGPT风格语音通话界面样式
+.chatgpt-voice-chat {
   position: absolute;
   top: 0;
   left: 0;
@@ -1233,131 +1332,353 @@ const formatTime = (dateString: string) => {
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  backdrop-filter: blur(10px);
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  .ai-avatar {
-    flex: 1;
+  // 顶部状态栏
+  .voice-header {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    text-align: center;
+    padding: 0.2rem 0.3rem;
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
 
-    .avatar {
-      width: 2rem;
-      height: 2rem;
-      border-radius: 50%;
-      background: linear-gradient(45deg, #ff9a9e, #fecfef, #fecfef);
-      margin: auto;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      transition: transform 0.3s ease;
+    .connection-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.1rem;
 
-      &.pulsing {
-        animation: avatar-pulse 2s infinite;
+      .status-dot {
+        width: 0.08rem;
+        height: 0.08rem;
+        border-radius: 50%;
+        background: #ff6b6b;
+        transition: background-color 0.3s;
+
+        &.connected {
+          background: #51cf66;
+        }
+      }
+
+      .status-text {
+        font-size: 0.14rem;
+        opacity: 0.9;
       }
     }
 
-    .character-name {
+    .close-btn {
+      width: 0.4rem;
+      height: 0.4rem;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
       color: white;
-      font-size: 0.24rem;
-      font-weight: 500;
-      margin-top: 0.3rem;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+    }
+  }
+
+  // 中央对话区域
+  .voice-conversation-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3rem;
+    padding: 2rem;
+
+    .ai-section, .user-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
 
-    .stt-display {
-      margin-top: 0.4rem;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 0.2rem 0.3rem;
-      border-radius: 0.2rem;
-      backdrop-filter: blur(10px);
-      max-width: 80%;
+    .ai-avatar-container, .user-avatar-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2rem;
+    }
 
+    // AI头像样式
+    .ai-avatar {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 50%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(45deg, #ff9a9e, #fecfef);
+      box-shadow: 0 0.2rem 0.8rem rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+
+      .avatar-inner {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+      }
+
+      &.speaking {
+        animation: ai-speaking 2s infinite;
+      }
+
+      &.thinking {
+        animation: ai-thinking 1.5s infinite alternate;
+      }
+
+      .voice-waves {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+
+        .wave {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 100%;
+          height: 100%;
+          border: 0.02rem solid rgba(255, 255, 255, 0.6);
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          animation: voice-wave 1.5s infinite;
+
+          &:nth-child(2) {
+            animation-delay: 0.3s;
+          }
+
+          &:nth-child(3) {
+            animation-delay: 0.6s;
+          }
+        }
+      }
+    }
+
+    // 用户头像样式
+    .user-avatar {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 50%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(45deg, #74b9ff, #0984e3);
+      box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+
+      .avatar-inner {
+        width: 2.1rem;
+        height: 2.1rem;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #81ecec, #00cec9);
+      }
+
+      &.listening {
+        animation: user-listening 1s infinite alternate;
+      }
+
+      &.voice_active {
+        animation: voice-active-pulse 0.8s infinite;
+        box-shadow: 0 0 0.5rem rgba(116, 185, 255, 0.8);
+      }
+
+      .vad-indicator {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+
+        .vad-ring {
+          position: absolute;
+          top: -0.1rem;
+          left: -0.1rem;
+          right: -0.1rem;
+          bottom: -0.1rem;
+          border: 0.03rem solid #51cf66;
+          border-radius: 50%;
+          animation: vad-ring-pulse 1.2s infinite;
+        }
+
+        .vad-pulse {
+          position: absolute;
+          top: -0.2rem;
+          left: -0.2rem;
+          right: -0.2rem;
+          bottom: -0.2rem;
+          background: rgba(81, 207, 102, 0.2);
+          border-radius: 50%;
+          animation: vad-pulse-expand 1.5s infinite;
+        }
+      }
+
+      .mic-icon {
+        position: absolute;
+        bottom: -0.05rem;
+        right: -0.05rem;
+        width: 0.6rem;
+        height: 0.6rem;
+        background: #51cf66;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 0.02rem solid white;
+
+        :deep(.el-icon) {
+          font-size: 0.25rem;
+          color: white;
+        }
+      }
+    }
+
+    // 名称和状态文字
+    .ai-name, .user-name {
+      font-size: 0.18rem;
+      font-weight: 600;
+      margin-top: 0.3rem;
+    }
+
+    .ai-status, .user-status {
+      font-size: 0.14rem;
+      opacity: 0.8;
+      margin-top: 0.1rem;
+    }
+  }
+
+  // STT实时显示
+  .stt-live-display {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    border-radius: 0.2rem;
+    padding: 0.3rem 0.4rem;
+    max-width: 80%;
+    text-align: center;
+
+    .stt-content {
       .stt-label {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 0.14rem;
+        font-size: 0.12rem;
+        opacity: 0.7;
         margin-bottom: 0.1rem;
       }
 
       .stt-text {
-        color: white;
-        font-size: 0.18rem;
+        font-size: 0.16rem;
         font-weight: 500;
       }
     }
   }
 
-  .control {
+  // 底部控制区域
+  .voice-controls {
+    padding: 0.5rem;
     display: flex;
     justify-content: center;
-    align-items: center;
-    margin: 1rem auto;
-    gap: 0.8rem;
 
-    .control-item {
-      width: 1rem;
-      height: 1rem;
-      border-radius: 50%;
+    .voice-btn {
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
+      gap: 0.15rem;
+      background: rgba(255, 255, 255, 0.15);
+      border: 0.02rem solid rgba(255, 255, 255, 0.3);
+      border-radius: 0.6rem;
+      padding: 0.3rem 0.6rem;
+      color: white;
       cursor: pointer;
       transition: all 0.3s;
       backdrop-filter: blur(10px);
-      border: 2px solid rgba(255, 255, 255, 0.2);
 
-      &.mic {
-        background: rgba(40, 167, 69, 0.8);
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
 
-        &.active {
-          background: rgba(40, 167, 69, 1);
-          transform: scale(1.1);
-          box-shadow: 0 0 20px rgba(40, 167, 69, 0.5);
-        }
+      &.active {
+        background: rgba(81, 207, 102, 0.8);
+        border-color: #51cf66;
+      }
 
-        &.muted {
-          background: rgba(108, 117, 125, 0.8);
-        }
+      &.voice_active {
+        background: rgba(255, 193, 7, 0.8);
+        border-color: #ffc107;
+        animation: mic-active-pulse 1s infinite;
+      }
 
-        &:hover {
-          transform: scale(1.05);
+      &:not(:disabled):hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: translateY(-0.02rem);
+      }
+
+      .btn-icon {
+        :deep(.el-icon) {
+          font-size: 0.4rem;
         }
       }
 
-      &.close {
-        background: rgba(220, 53, 69, 0.8);
-
-        &:hover {
-          background: rgba(220, 53, 69, 1);
-          transform: scale(1.05);
-        }
-      }
-
-      :deep(.el-icon) {
-        font-size: 0.5rem;
-        color: white;
-        svg {
-          font-size: 0.5rem;
-        }
+      .btn-text {
+        font-size: 0.12rem;
+        font-weight: 500;
       }
     }
   }
 }
 
-@keyframes avatar-pulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 15px 40px rgba(255, 154, 158, 0.4);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  }
+// 动画定义
+@keyframes ai-speaking {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes ai-thinking {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.03); opacity: 1; }
+}
+
+@keyframes user-listening {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.02); }
+}
+
+@keyframes voice-active-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes voice-wave {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
+@keyframes vad-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+}
+
+@keyframes vad-pulse-expand {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+@keyframes mic-active-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 </style>
