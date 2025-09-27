@@ -61,30 +61,30 @@
         <div class="history-list" v-if="chatHistory.length > 0">
           <div
             v-for="chat in chatHistory"
-            :key="chat.id"
+            :key="chat.conversationUuid"
             class="history-item"
             :class="{ active: activeChatId === chat.conversationUuid }"
-            @click="selectChat(chat.conversationUuid || chat.id)"
+            @click="selectChat(chat.conversationUuid)"
             :title="chat.title || '未命名对话'"
           >
-            <el-icon><ChatDotRound /></el-icon>
+            <div class="history-item-avatar"><img :src="chat.characterAvatarUrl" alt="" /></div>
             <!-- 对话标题，支持双击编辑 -->
             <span
-              v-if="!sidebarCollapsed && editingChatId !== (chat.conversationUuid || chat.id)"
+              v-if="!sidebarCollapsed && editingChatId !== chat.conversationUuid"
               class="history-item-title"
-              @dblclick="startEditTitle(chat.conversationUuid || chat.id, chat.title || '未命名对话')"
+              @dblclick="startEditTitle(chat.conversationUuid, chat.title || '未命名对话')"
             >
               {{ chat.title || '未命名对话' }}
             </span>
 
             <!-- 编辑状态的输入框 -->
             <el-input
-              v-if="!sidebarCollapsed && editingChatId === (chat.conversationUuid || chat.id)"
+              v-if="!sidebarCollapsed && editingChatId === chat.conversationUuid"
               v-model="editingTitle"
               class="history-item-edit-input"
               size="small"
-              @blur="confirmEditTitle(chat.conversationUuid || chat.id)"
-              @keydown.enter="confirmEditTitle(chat.conversationUuid || chat.id)"
+              @blur="confirmEditTitle(chat.conversationUuid)"
+              @keydown.enter="confirmEditTitle(chat.conversationUuid)"
               @keydown.esc="cancelEditTitle"
               @click.stop
               ref="editInput"
@@ -93,19 +93,22 @@
             <!-- 操作按钮组 -->
             <div v-if="!sidebarCollapsed" class="history-item-actions" @click.stop>
               <el-icon
-                @click="startEditTitle(chat.conversationUuid || chat.id, chat.title || '未命名对话')"
+                @click="startEditTitle(chat.conversationUuid, chat.title || '未命名对话')"
                 class="action-btn rename-btn"
                 title="重命名"
               >
                 <Edit />
               </el-icon>
-              <el-icon
-                @click="deleteChat(chat.conversationUuid || chat.id, $event)"
-                class="action-btn delete-btn"
-                title="删除"
+              <el-popconfirm
+                title="确定要删除该对话吗？"
+                @confirm="deleteChat(chat.conversationUuid, $event)"
               >
-                <Delete />
-              </el-icon>
+                <template #reference>
+                  <el-icon class="action-btn delete-btn" title="删除">
+                    <Delete />
+                  </el-icon>
+                </template>
+              </el-popconfirm>
             </div>
             <!--  <span class="history-time" v-if="!sidebarCollapsed">
               {{ formatTime(chat.lastTime) }}
@@ -132,7 +135,7 @@
           </div>
         </div>
         <div class="user-menu" ref="userMenu" v-show="showUserMenu">
-          <div class="user-menu-item">
+          <div class="user-menu-item" @click="userShow = true">
             设置<el-icon><Setting /></el-icon>
           </div>
           <div
@@ -146,6 +149,7 @@
         </div>
       </div>
     </div>
+    <UserInfo v-if="userShow" @close="userShow = false" />
   </aside>
 </template>
 
@@ -157,14 +161,18 @@ import { removeToken } from '@/utils/token'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { ChatHistoryItem } from '@/types/common'
+// import type { ChatHistoryItem } from '@/types/common'
+import { chatHistoryStore } from '@/store'
+import UserInfo from './UserInfo.vue'
 const emit = defineEmits(['toggleSidebar'])
 const { sidebarCollapsed } = defineProps(['sidebarCollapsed'])
 const router = useRouter()
 const route = useRoute()
 const fullscreenLoading = ref(false)
 const isM = computed(() => isMobile())
-const chatHistory = ref<ChatHistoryItem[]>([])
+const chatHistory = computed(() => {
+  return chatHistoryStore().chatHistory
+})
 const isLoadingHistory = ref(false)
 const activeChatId = ref('')
 const userInfo = ref({
@@ -180,6 +188,8 @@ const showUserMenu = ref(false)
 // 编辑相关状态
 const editingChatId = ref('')
 const editingTitle = ref('')
+
+const userShow = ref(false)
 
 onMounted(() => {
   document.addEventListener('click', handleOutSide)
@@ -249,23 +259,9 @@ const getUserInfo = async () => {
 // 加载聊天历史记录
 const loadChatHistory = async () => {
   if (isLoadingHistory.value) return
-
+  chatHistoryStore().getChatHistory()
   try {
     isLoadingHistory.value = true
-    const res = await conversationApi.getConversationList()
-    if (res.code === 200) {
-      // 将后端数据转换为前端所需的格式
-      chatHistory.value = res.data.map(conversation => ({
-        id: conversation.conversationUuid,
-        conversationUuid: conversation.conversationUuid,
-        title: conversation.title || `与${conversation.characterName}的对话`,
-        lastTime: conversation.updateDate,
-        characterName: conversation.characterName,
-        characterAvatarUrl: conversation.characterAvatarUrl,
-        lastMessageSummary: conversation.lastMessageSummary,
-        status: conversation.status
-      }))
-    }
   } catch (error) {
     console.error('加载聊天历史失败:', error)
     ElMessage.error('加载聊天历史失败')
@@ -279,16 +275,7 @@ const deleteChat = async (conversationUuid: string, event: Event) => {
   event.stopPropagation() // 阻止事件冒泡
 
   try {
-    const res = await conversationApi.deleteConversation(conversationUuid)
-    if (res.code === 200) {
-      ElMessage.success('对话已删除')
-      // 从列表中移除已删除的对话
-      chatHistory.value = chatHistory.value.filter(chat => chat.conversationUuid !== conversationUuid)
-      // 如果删除的是当前活跃的对话，清除活跃状态
-      if (activeChatId.value === conversationUuid) {
-        activeChatId.value = ''
-      }
-    }
+    await chatHistoryStore().deleteChatHistory(conversationUuid)
   } catch (error) {
     console.error('删除对话失败:', error)
     ElMessage.error('删除对话失败')
@@ -320,7 +307,10 @@ const confirmEditTitle = async (conversationUuid: string) => {
     return
   }
 
-  if (editingTitle.value.trim() === chatHistory.value.find(chat => chat.conversationUuid === conversationUuid)?.title) {
+  if (
+    editingTitle.value.trim() ===
+    chatHistory.value.find((chat) => chat.conversationUuid === conversationUuid)?.title
+  ) {
     // 标题没有变化，直接取消编辑
     cancelEditTitle()
     return
@@ -328,12 +318,14 @@ const confirmEditTitle = async (conversationUuid: string) => {
 
   try {
     const res = await conversationApi.updateConversationTitle(conversationUuid, {
-      title: editingTitle.value.trim()
+      title: editingTitle.value.trim(),
     })
 
     if (res.code === 200) {
       // 更新本地数据
-      const chatIndex = chatHistory.value.findIndex(chat => chat.conversationUuid === conversationUuid)
+      const chatIndex = chatHistory.value.findIndex(
+        (chat) => chat.conversationUuid === conversationUuid,
+      )
       if (chatIndex !== -1) {
         chatHistory.value[chatIndex].title = editingTitle.value.trim()
       }
@@ -533,13 +525,24 @@ const confirmEditTitle = async (conversationUuid: string) => {
 
       .history-item-title {
         flex: 1;
+        // width: 50%;
         margin: 0 0.1rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         cursor: text;
       }
-
+      .history-item-avatar {
+        width: 0.25rem;
+        height: 0.25rem;
+        border-radius: 50%;
+        overflow: hidden;
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+      }
       .history-item-edit-input {
         flex: 1;
         margin: 0 0.1rem;
@@ -590,12 +593,6 @@ const confirmEditTitle = async (conversationUuid: string) => {
           }
         }
       }
-
-      .history-time {
-        font-size: 0.12rem;
-        color: #999;
-        white-space: nowrap;
-      }
     }
 
     .empty-history {
@@ -605,6 +602,8 @@ const confirmEditTitle = async (conversationUuid: string) => {
       font-size: 0.14rem;
     }
   }
+
+  // 用户信息
   .user-section {
     width: 90%;
     position: relative;

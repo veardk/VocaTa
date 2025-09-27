@@ -25,5 +25,20 @@ export const roleApi = {
       method: 'get',
       params
     })
+  },
+  // 创建角色
+  createRole(data: any) {
+    return request({
+      url: '/api/client/character',
+      method: 'post',
+      data
+    })
+  },
+  // 获取音色列表
+  getSoundList() {
+    return request({
+      url: '/api/client/tts-voice/list',
+      method: 'get'
+    })
   }
 }

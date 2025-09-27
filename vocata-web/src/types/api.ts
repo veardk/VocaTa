@@ -65,7 +65,7 @@ export interface Response<T> {
 
 // 创建对话请求参数
 export interface CreateConversationRequest {
-  characterId: string,
+  characterId: string | number,
   title?: string
 }
 

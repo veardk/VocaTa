@@ -4,7 +4,8 @@
     <el-form ref="form" :model="form" label-width="80px" class="form">
       <el-upload
         class="avatar-uploader"
-        action=""
+        :action="baseUrl + '/api/client/character/upload-avatar'"
+        :headers="{ Authorization: 'Bearer ' + getToken() }"
         :show-file-list="false"
         :on-success="handleAvatarSuccess"
         :before-upload="beforeAvatarUpload"
@@ -12,37 +13,66 @@
         <img v-if="imageUrl" :src="imageUrl" class="avatar" />
         <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
       </el-upload>
-      <span class="form-label"> 角色名称：</span>
-      <input placeholder="例如：张三" class="form-input" />
-      <span class="form-label"> 简介：</span>
-      <input placeholder="您的角色信息" class="form-input" />
-      <span class="form-label"> 描述：</span>
-      <textarea placeholder="角色介绍" class="form-textarea" rows="4"></textarea>
-      <span class="form-label"> 开场白：</span>
-      <input placeholder="你好呀！" class="form-input" />
-      <el-checkbox label="是否公开角色" />
-      <div class="newBtn" type="primary">创建</div>
+      <span class="form-label required"> 角色名称</span>
+      <input placeholder="例如：张三" v-model="form.name" class="form-input" />
+      <span class="form-label required"> 描述</span>
+      <textarea
+        placeholder="你的角色信息"
+        v-model="form.description"
+        class="form-textarea"
+        rows="4"
+      ></textarea>
+      <span class="form-label required"> 开场白</span>
+      <input placeholder="你好呀！" v-model="form.greeting" class="form-input" />
+      <span class="form-label required">角色声音</span>
+      <el-select v-model="form.voiceId" placeholder="请选择角色声音">
+        <el-option v-for="item in options" :key="item.id" :label="item.name" :value="item.name">
+        </el-option>
+      </el-select>
+      <el-checkbox label="是否公开角色 " v-model="form.isPublic" />
+      <span class="form-label">
+        注意：系统会根据您填写的信息生成角色的提示词，如果希望自定义添加请填写提示词。
+      </span>
+      <span class="form-label"> Prompt提示词</span>
+      <textarea placeholder="你的角色提示词" class="form-textarea" rows="4"></textarea>
+      <div class="newBtn" type="primary" @click="createRole">创建</div>
     </el-form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { isMobile } from '@/utils/isMobile'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadProps } from 'element-plus'
+import { getToken } from '@/utils/token'
+import { roleApi } from '@/api/modules/role'
 
 const isM = computed(() => isMobile())
-
+const baseUrl = import.meta.env.VITE_APP_URL
 // 表单数据
 const form = ref({
   name: '',
   description: '',
-  introduction: '',
   greeting: '',
-  isPublic: false
+  isPublic: false,
+  persona: '',
+  voiceId: '',
 })
+
+// 音色
+const options = ref([])
+
+onMounted(() => {
+  getVoice()
+})
+
+//获取音色
+const getVoice = async () => {
+  const res = await roleApi.getSoundList()
+  options.value = res.data
+}
 
 // 头像相关
 const imageUrl = ref('')
@@ -61,6 +91,27 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
   }
   return true
 }
+
+// 创建角色
+const createRole = async () => {
+  if (form.value.name === '') {
+    ElMessage.error('请输入角色名称')
+    return
+  }
+  if (form.value.description === '') {
+    ElMessage.error('请输入角色描述')
+    return
+  }
+  if (form.value.greeting === '') {
+    ElMessage.error('请输入角色开场白')
+    return
+  }
+  if (form.value.voiceId === '') {
+    ElMessage.error('请选择角色声音')
+    return
+  }
+  const res = await roleApi.createRole(form.value)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -74,6 +125,10 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
     .form {
       width: 80%;
     }
+    .newBtn {
+      width: 50%;
+      padding: 0.1rem 0;
+    }
   }
 }
 .header {
@@ -84,7 +139,7 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
 }
 .form {
   margin: 0.3rem auto;
-  width: 50%;
+  width: 55%;
   display: flex;
   flex-direction: column;
   align-items: start;
@@ -138,6 +193,10 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
   overflow: hidden;
   transition: var(--el-transition-duration-fast);
 }
+.avatar {
+  width: 1rem;
+  height: 1rem;
+}
 
 .avatar-uploader .el-upload:hover {
   border-color: var(--el-color-primary);
@@ -153,6 +212,7 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
 .newBtn {
   width: 20%;
   text-align: center;
+  margin-top: 0.2rem;
   padding: 0.15rem 0;
   font-size: 0.24rem;
   background-color: #000;
@@ -163,6 +223,13 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
   align-self: end;
   &:hover {
     background-color: #333;
+  }
+}
+.required {
+  &::before {
+    content: '*';
+    color: red;
+    margin-right: 0.05rem;
   }
 }
 </style>
