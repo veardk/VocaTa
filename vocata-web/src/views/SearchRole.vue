@@ -43,7 +43,7 @@
             <div class="name">{{ item.name }}</div>
           </div>
           <div class="description">{{ item.description }}</div>
-          <div class="goto" @click="startConversation(item.id)">开始对话</div>
+          <div class="goto" @click.stop="startConversation(item.id)">开始对话</div>
         </div>
       </div>
     </div>
@@ -60,7 +60,7 @@
             <div class="name">{{ item.name }}</div>
           </div>
           <div class="description">{{ item.description }}</div>
-          <div class="goto" @click="startConversation(item.id)">开始对话</div>
+          <div class="goto" @click.stop="startConversation(item.id)">开始对话</div>
         </div>
       </div>
     </div>
@@ -135,7 +135,7 @@ const getSelectedRoleList = async () => {
   loading1.value = true
   const res = await roleApi.getChoiceRoleList({ limit: 5 })
   selectRoleList.value = res.data
-  console.log(selectRoleList.value)
+  console.log('精选角色列表:', selectRoleList.value)
   loading1.value = false
 }
 const debouncedSearch = debounce(async () => {
@@ -158,17 +158,28 @@ onMounted(() => {
 })
 
 // 开始对话
-const startConversation = async (characterId: string) => {
+const startConversation = async (characterId: string | number) => {
   try {
+    console.log('点击开始对话，角色ID:', characterId)
+    console.log('角色ID类型:', typeof characterId)
+
+    if (!characterId) {
+      console.error('角色ID为空')
+      ElMessage.error('角色信息有误，请重试')
+      return
+    }
+
     // 添加加载状态
     const loadingMessage = ElMessage.loading('正在创建对话...')
 
-    // 调用创建对话接口
+    // 调用创建对话接口，确保ID转换为字符串
     const res = await conversationApi.createConversation({
-      characterId: characterId
+      characterId: String(characterId)
     })
 
     loadingMessage.close()
+
+    console.log('创建对话响应:', res)
 
     if (res.code === 200) {
       const conversationUuid = res.data.conversationUuid
