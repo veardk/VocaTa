@@ -2,6 +2,7 @@ package com.vocata.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
@@ -45,7 +46,7 @@ public class MybatisPlusConfig {
     }
 
     /**
-     * 自定义SqlSessionFactory，注册TypeHandler
+     * 自定义SqlSessionFactory，注册TypeHandler并配置GlobalConfig
      */
     @Bean
     @Primary
@@ -63,6 +64,11 @@ public class MybatisPlusConfig {
 
         // 设置配置
         factory.setConfiguration(configuration);
+
+        // 配置MyBatis Plus的GlobalConfig，确保自动填充功能正常工作
+        GlobalConfig globalConfig = new GlobalConfig();
+        globalConfig.setMetaObjectHandler(metaObjectHandler());
+        factory.setGlobalConfig(globalConfig);
 
         // 添加插件
         factory.setPlugins(mybatisPlusInterceptor());

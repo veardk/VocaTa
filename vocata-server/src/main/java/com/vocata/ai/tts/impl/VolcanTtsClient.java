@@ -23,8 +23,6 @@ import java.util.Map;
 
 /**
  * 火山引擎语音合成服务实现
- * 基于火山引擎TTS API
- * 文档: https://www.volcengine.com/docs/6561/1000027
  */
 @Service
 public class VolcanTtsClient implements TtsClient {

@@ -34,27 +34,30 @@ public class QiniuSttClient implements SttClient {
 
     private static final Logger logger = LoggerFactory.getLogger(QiniuSttClient.class);
 
+    @Value("${qiniu.ai.api-key:}")
+    private String apiKey;
+
     @Value("${qiniu.access-key:}")
     private String accessKey;
 
     @Value("${qiniu.secret-key:}")
     private String secretKey;
 
-    @Value("${qiniu.stt.endpoint:https://ai.qiniuapi.com}")
+    @Value("${qiniu.stt.endpoint:https://openai.qiniu.com/v1}")
     private String endpoint;
 
-    @Value("${qiniu.stt.model:asr-zh}")
+    @Value("${qiniu.stt.model:asr}")
     private String defaultModel;
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
 
-    // 支持的语音识别模型
+    // 支持的语音识别模型 (根据七牛云文档)
     private static final Map<String, String> SUPPORTED_MODELS = Map.of(
-        "zh-CN", "asr-zh",      // 中文识别
-        "en-US", "asr-en",      // 英文识别
-        "zh_cn", "asr-zh",
-        "en_us", "asr-en"
+        "zh-CN", "asr",         // 中文识别
+        "en-US", "asr",         // 英文识别 (七牛云统一使用asr模型)
+        "zh_cn", "asr",
+        "en_us", "asr"
     );
 
     // 支持的音频格式
@@ -74,20 +77,23 @@ public class QiniuSttClient implements SttClient {
 
     @Override
     public boolean isAvailable() {
-        boolean isConfigured = StringUtils.hasText(accessKey) &&
-                              StringUtils.hasText(secretKey) &&
-                              !accessKey.equals("your-qiniu-access-key") &&
-                              !secretKey.equals("your-qiniu-secret-key");
+        // 优先使用AI API Key，如果没有则使用存储access key
+        String tokenToUse = StringUtils.hasText(apiKey) && !apiKey.equals("your-qiniu-ai-api-key")
+                          ? apiKey
+                          : accessKey;
+
+        boolean isConfigured = StringUtils.hasText(tokenToUse) &&
+                              !tokenToUse.equals("your-qiniu-access-key");
 
         if (!isConfigured) {
-            logger.warn("七牛云STT配置不完整 - 需要配置qiniu.access-key和qiniu.secret-key");
+            logger.warn("七牛云STT配置不完整 - 需要配置qiniu.ai.api-key或qiniu.access-key");
         }
 
         return isConfigured;
     }
 
     @Override
-    public Flux<SttResult> streamRecognize(Flux<byte[]> audioStream, SttConfig config) {
+    public Flux<SttClient.SttResult> streamRecognize(Flux<byte[]> audioStream, SttClient.SttConfig config) {
         if (!isAvailable()) {
             return Flux.error(new RuntimeException("七牛云STT服务配置不完整：需要access-key和secret-key"));
         }
@@ -111,7 +117,7 @@ public class QiniuSttClient implements SttClient {
                     return recognize(combinedAudio, config)
                             .map(result -> {
                                 // 为流式识别创建中间结果
-                                SttResult streamResult = new SttResult();
+                                SttClient.SttResult streamResult = new SttClient.SttResult();
                                 streamResult.setText(result.getText());
                                 streamResult.setConfidence(result.getConfidence());
                                 streamResult.setFinal(result.isFinal());
@@ -122,7 +128,7 @@ public class QiniuSttClient implements SttClient {
                 })
                 .onErrorResume(error -> {
                     logger.error("七牛云STT流式识别失败", error);
-                    SttResult errorResult = new SttResult();
+                    SttClient.SttResult errorResult = new SttClient.SttResult();
                     errorResult.setText("语音识别服务暂时不可用，请稍后再试");
                     errorResult.setConfidence(0.0);
                     errorResult.setFinal(true);
@@ -131,7 +137,7 @@ public class QiniuSttClient implements SttClient {
     }
 
     @Override
-    public Mono<SttResult> recognize(byte[] audioData, SttConfig config) {
+    public Mono<SttClient.SttResult> recognize(byte[] audioData, SttClient.SttConfig config) {
         if (!isAvailable()) {
             return Mono.error(new RuntimeException("七牛云STT服务配置不完整：需要access-key和secret-key"));
         }
@@ -147,7 +153,7 @@ public class QiniuSttClient implements SttClient {
                     .map(response -> parseAsrResponse(response, config))
                     .onErrorResume(error -> {
                         logger.error("七牛云STT批量识别失败", error);
-                        SttResult errorResult = new SttResult();
+                        SttClient.SttResult errorResult = new SttClient.SttResult();
                         errorResult.setText("语音识别服务暂时不可用，请稍后再试");
                         errorResult.setConfidence(0.0);
                         errorResult.setFinal(true);
@@ -168,14 +174,14 @@ public class QiniuSttClient implements SttClient {
     /**
      * 调用七牛云ASR API
      */
-    private Mono<Map<String, Object>> callQiniuAsrApi(byte[] audioData, SttConfig config) {
+    private Mono<Map<String, Object>> callQiniuAsrApi(byte[] audioData, SttClient.SttConfig config) {
         try {
             // 构建请求体
             Map<String, Object> requestBody = buildRequestBody(audioData, config);
             String requestBodyJson = objectMapper.writeValueAsString(requestBody);
 
             // 构建认证头
-            String path = "/v1/asr";
+            String path = "/voice/asr";
             Map<String, String> headers = buildAuthHeaders("POST", path, requestBodyJson);
 
             String url = endpoint + path;
@@ -196,37 +202,29 @@ public class QiniuSttClient implements SttClient {
     }
 
     /**
-     * 构建请求体
+     * 构建请求体 (根据七牛云语音识别API文档)
      */
-    private Map<String, Object> buildRequestBody(byte[] audioData, SttConfig config) {
+    private Map<String, Object> buildRequestBody(byte[] audioData, SttClient.SttConfig config) {
         Map<String, Object> request = new HashMap<>();
 
-        // 音频数据 (Base64编码)
-        String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        request.put("data", base64Audio);
-
-        // 识别模型
+        // 模型
         String model = getModelForLanguage(config.getLanguage());
         request.put("model", model);
 
-        // 音频格式 (从配置中推断或使用默认值)
+        // 音频数据结构
+        Map<String, Object> audio = new HashMap<>();
+
+        // 音频格式
         String format = mapAudioFormat(config.getAudioFormat());
-        if (format != null) {
-            request.put("format", format);
-        }
+        audio.put("format", format);
 
-        // 采样率
-        if (config.getSampleRate() > 0) {
-            request.put("rate", config.getSampleRate());
-        }
+        // 可以是URL或者base64编码的音频数据
+        String base64Audio = Base64.getEncoder().encodeToString(audioData);
+        audio.put("data", base64Audio);
 
-        // 附加参数
-        Map<String, Object> params = new HashMap<>();
-        params.put("enable_punctuation", config.isEnablePunctuation());
-        params.put("enable_vad", config.isEnableVAD());
-        request.put("params", params);
+        request.put("audio", audio);
 
-        logger.debug("七牛云ASR请求体: model={}, format={}, rate={}", model, format, config.getSampleRate());
+        logger.debug("七牛云ASR请求体: model={}, format={}", model, format);
 
         return request;
     }
@@ -244,11 +242,11 @@ public class QiniuSttClient implements SttClient {
             return model;
         }
 
-        // 简单的语言映射
+        // 简单的语言映射 - 七牛云统一使用asr模型
         if (language.toLowerCase().startsWith("zh")) {
-            return "asr-zh";
+            return "asr";
         } else if (language.toLowerCase().startsWith("en")) {
-            return "asr-en";
+            return "asr";
         }
 
         return defaultModel;
@@ -284,60 +282,27 @@ public class QiniuSttClient implements SttClient {
     }
 
     /**
-     * 构建认证头
+     * 构建认证头 (使用Bearer Token方式)
      */
     private Map<String, String> buildAuthHeaders(String method, String path, String body) throws Exception {
         Map<String, String> headers = new HashMap<>();
 
-        // 时间戳
-        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
-        headers.put("X-Qiniu-Date", timestamp);
+        // 优先使用AI API Key，如果没有则使用存储access key
+        String tokenToUse = StringUtils.hasText(apiKey) && !apiKey.equals("your-qiniu-ai-api-key")
+                          ? apiKey
+                          : accessKey;
 
-        // 构建签名字符串
-        String stringToSign = method + " " + path + "\nHost: " + extractHost(endpoint) + "\n";
-        if (body != null && !body.isEmpty()) {
-            stringToSign += "Content-Type: application/json\n";
-            stringToSign += "\n" + body;
-        }
-
-        // 计算签名
-        String signature = calculateQiniuSignature(stringToSign);
-        String authorization = "Qiniu " + accessKey + ":" + signature;
-        headers.put("Authorization", authorization);
-
+        headers.put("Authorization", "Bearer " + tokenToUse);
         headers.put("Content-Type", "application/json");
 
         return headers;
     }
 
     /**
-     * 计算七牛云签名
-     */
-    private String calculateQiniuSignature(String stringToSign) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA1");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA1");
-        mac.init(secretKeySpec);
-
-        byte[] hash = mac.doFinal(stringToSign.getBytes(StandardCharsets.UTF_8));
-        return Base64.getEncoder().encodeToString(hash);
-    }
-
-    /**
-     * 从URL中提取主机名
-     */
-    private String extractHost(String url) {
-        try {
-            return java.net.URI.create(url).getHost();
-        } catch (Exception e) {
-            return "ai.qiniuapi.com"; // 默认主机名
-        }
-    }
-
-    /**
      * 解析ASR响应
      */
-    private SttResult parseAsrResponse(Map<String, Object> response, SttConfig config) {
-        SttResult result = new SttResult();
+    private SttClient.SttResult parseAsrResponse(Map<String, Object> response, SttClient.SttConfig config) {
+        SttClient.SttResult result = new SttClient.SttResult();
 
         try {
             // 检查响应状态

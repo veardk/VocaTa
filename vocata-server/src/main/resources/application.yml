@@ -117,7 +117,7 @@ ai:
   llm:
     provider: ${AI_LLM_PROVIDER:qiniu}  # 默认使用七牛云AI
   stt:
-    provider: ${AI_STT_PROVIDER:xunfei}
+    provider: ${AI_STT_PROVIDER:qiniu}
   tts:
     provider: ${AI_TTS_PROVIDER:xunfei}
 
@@ -128,6 +128,13 @@ qiniu:
     base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
     default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
     timeout: ${QINIU_AI_TIMEOUT:60}
+  # 七牛云存储配置
+  access-key: ${QINIU_ACCESS_KEY:your-qiniu-access-key}
+  secret-key: ${QINIU_SECRET_KEY:your-qiniu-secret-key}
+  # 七牛云STT配置
+  stt:
+    endpoint: ${QINIU_STT_ENDPOINT:https://openai.qiniu.com/v1}
+    model: ${QINIU_STT_MODEL:asr}
 
 # Gemini配置
 gemini:
