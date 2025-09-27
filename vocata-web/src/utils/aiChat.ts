@@ -71,7 +71,7 @@ export class VocaTaWebSocketClient {
       return
     }
 
-    const wsUrl = `ws://localhost:9009/ws/chat/${this.conversationUuid}?token=${encodeURIComponent(token)}`
+    const wsUrl = `ws://${import.meta.env.VITE_APP_URL.replace('http://', '')}/ws/chat/${this.conversationUuid}?token=${encodeURIComponent(token)}`
     console.log('🔌 尝试连接WebSocket:', wsUrl)
     console.log('🔐 使用Token:', token.substring(0, 20) + '...')
 
@@ -498,7 +498,7 @@ export class VocaTaAIChat {
 
         // 如果收到状态消息表示连接已建立，则resolve
         if (!connectionResolved && message.type === 'status' &&
-            (message.message?.includes('连接已建立') || message.message?.includes('WebSocket连接已建立'))) {
+          (message.message?.includes('连接已建立') || message.message?.includes('WebSocket连接已建立'))) {
           console.log('🎉 收到服务器连接确认，连接完全建立')
           connectionResolved = true
           this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
@@ -594,7 +594,7 @@ export class VocaTaAIChat {
     // 修复：始终累积文本，无论是否完成
     // 流式渲染应该累积所有收到的文本片段
     this.currentLLMResponse += message.text
-    
+
     console.log(`🔍 当前累积文本长度: ${this.currentLLMResponse.length}`)
 
     this.onLLMStreamCallback?.(this.currentLLMResponse, message.isComplete, message.characterName)
