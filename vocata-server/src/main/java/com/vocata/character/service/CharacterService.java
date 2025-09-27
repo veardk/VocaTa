@@ -85,11 +85,40 @@ public interface CharacterService {
     List<Character> getTrendingCharacters(int limit);
 
     /**
+     * 获取热门角色列表（包含创建者名称）
+     * @param limit 限制数量
+     * @return 热门角色列表（包含创建者名称）
+     */
+    List<java.util.Map<String, Object>> getTrendingCharactersWithCreator(int limit);
+
+    /**
      * 获取精选角色列表
      * @param limit 限制数量
      * @return 精选角色列表
      */
     List<Character> getFeaturedCharacters(int limit);
+
+    /**
+     * 获取精选角色列表（包含创建者名称）
+     * @param limit 限制数量
+     * @return 精选角色列表（包含创建者名称）
+     */
+    List<java.util.Map<String, Object>> getFeaturedCharactersWithCreator(int limit);
+
+    /**
+     * 分页查询公开角色列表（包含创建者名称）
+     * @param page 分页参数
+     * @param status 角色状态，null表示不过滤
+     * @param isFeatured 是否精选，null表示不过滤
+     * @param tags 标签列表，null表示不过滤
+     * @param orderBy 排序字段
+     * @param orderDirection 排序方向
+     * @return 角色分页列表（包含创建者名称）
+     */
+    com.baomidou.mybatisplus.core.metadata.IPage<java.util.Map<String, Object>> getPublicCharactersWithCreator(
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<Character> page,
+            Integer status, Integer isFeatured,
+            List<String> tags, String orderBy, String orderDirection);
 
     /**
      * 更新角色状态

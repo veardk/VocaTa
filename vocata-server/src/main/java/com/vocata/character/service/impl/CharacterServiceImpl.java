@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -222,6 +223,11 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     }
 
     @Override
+    public List<Map<String, Object>> getTrendingCharactersWithCreator(int limit) {
+        return this.baseMapper.selectTrendingCharactersWithCreator(limit);
+    }
+
+    @Override
     public List<Character> getFeaturedCharacters(int limit) {
         Page<Character> page = new Page<>(1, limit);
         IPage<Character> result = this.page(page, new LambdaQueryWrapper<Character>()
@@ -231,6 +237,18 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
                 .orderByDesc(Character::getSortWeight)
                 .orderByDesc(Character::getCreateDate));
         return result.getRecords();
+    }
+
+    @Override
+    public List<Map<String, Object>> getFeaturedCharactersWithCreator(int limit) {
+        return this.baseMapper.selectFeaturedCharactersWithCreator(limit);
+    }
+
+    @Override
+    public IPage<Map<String, Object>> getPublicCharactersWithCreator(Page<Character> page, Integer status,
+                                                                   Integer isFeatured, List<String> tags,
+                                                                   String orderBy, String orderDirection) {
+        return this.baseMapper.selectPublicCharactersWithCreator(page, status, isFeatured);
     }
 
     @Override
