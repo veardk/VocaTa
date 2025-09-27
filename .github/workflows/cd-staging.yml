@@ -148,6 +148,14 @@ jobs:
         cache: 'npm'
         cache-dependency-path: vocata-web/package-lock.json
 
+    - name: 准备前端环境配置
+      working-directory: ./vocata-web
+      run: |
+        # 替换测试环境配置中的占位符
+        sed -i 's/{{STAGING_HOST}}/${{ secrets.STAGING_HOST }}/g' .env.test
+        cat .env.test
+        echo "前端环境配置已更新"
+
     - name: 构建前端应用
       working-directory: ./vocata-web
       run: |
@@ -201,6 +209,14 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         cache-dependency-path: vocata-admin/package-lock.json
+
+    - name: 准备管理后台环境配置
+      working-directory: ./vocata-admin
+      run: |
+        # 替换测试环境配置中的占位符
+        sed -i 's/{{STAGING_HOST}}/${{ secrets.STAGING_HOST }}/g' .env.test
+        cat .env.test
+        echo "管理后台环境配置已更新"
 
     - name: 构建管理后台应用
       working-directory: ./vocata-admin
