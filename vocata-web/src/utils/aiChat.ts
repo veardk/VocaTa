@@ -99,17 +99,32 @@ export class VocaTaWebSocketClient {
     }
 
     this.ws.onmessage = (event) => {
+      // 检查是否为二进制音频数据
       if (event.data instanceof ArrayBuffer) {
-        console.log(`📦 收到音频数据: ${event.data.byteLength} bytes`)
+        console.log(`📦 收到音频数据(ArrayBuffer): ${event.data.byteLength} bytes`)
         this.emit('audioData', event.data)
-      } else {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data)
-          console.log(`📨 收到消息:`, message)
-          this.emit('message', message)
-        } catch (e) {
-          console.error('❌ 解析消息失败:', event.data)
-        }
+        return
+      }
+
+      // 检查是否为Blob音频数据
+      if (event.data instanceof Blob) {
+        console.log(`📦 收到音频数据(Blob): ${event.data.size} bytes`)
+        // 将Blob转换为ArrayBuffer
+        event.data.arrayBuffer().then(arrayBuffer => {
+          this.emit('audioData', arrayBuffer)
+        }).catch(error => {
+          console.error('❌ Blob转ArrayBuffer失败:', error)
+        })
+        return
+      }
+
+      // 否则按JSON消息处理
+      try {
+        const message: WebSocketMessage = JSON.parse(event.data)
+        console.log(`📨 收到消息:`, message)
+        this.emit('message', message)
+      } catch (e) {
+        console.error('❌ 解析消息失败:', event.data)
       }
     }
 
@@ -470,16 +485,33 @@ export class VocaTaAIChat {
   private connectWebSocket(conversationUuid: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.wsClient = new VocaTaWebSocketClient(conversationUuid)
+      let connectionResolved = false // 防止重复resolve
 
       // 设置事件监听器
       this.wsClient.on('connected', () => {
-        console.log('🎉 WebSocket连接成功')
-        this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
-        resolve() // 连接成功时resolve Promise
+        console.log('🎉 WebSocket连接成功，等待服务器确认...')
+        // 不在这里resolve，等待服务器状态消息
       })
 
       this.wsClient.on('message', (message: WebSocketMessage) => {
         this.handleWebSocketMessage(message)
+
+        // 如果收到状态消息表示连接已建立，则resolve
+        if (!connectionResolved && message.type === 'status' &&
+            (message.message?.includes('连接已建立') || message.message?.includes('WebSocket连接已建立'))) {
+          console.log('🎉 收到服务器连接确认，连接完全建立')
+          connectionResolved = true
+          this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
+          resolve()
+        }
+
+        // 如果还没有连接确认，但收到了任何其他消息（AI回复等），也认为连接成功
+        if (!connectionResolved && (message.type === 'llm_text_stream' || message.type === 'text_message')) {
+          console.log('🎯 收到AI消息，连接确认成功')
+          connectionResolved = true
+          this.onConnectionStatusCallback?.('connected', 'AI系统连接成功')
+          resolve()
+        }
       })
 
       this.wsClient.on('audioData', (audioBuffer: ArrayBuffer) => {
@@ -489,7 +521,10 @@ export class VocaTaAIChat {
       this.wsClient.on('error', (error: any) => {
         console.error('❌ WebSocket错误:', error)
         this.onConnectionStatusCallback?.('error', 'WebSocket连接错误')
-        reject(error) // 连接失败时reject Promise
+        if (!connectionResolved) {
+          connectionResolved = true
+          reject(error)
+        }
       })
 
       this.wsClient.on('disconnected', () => {
@@ -502,13 +537,17 @@ export class VocaTaAIChat {
         this.onConnectionStatusCallback?.('error', '连接失败，请刷新页面重试')
       })
 
-      // 设置超时，如果30秒内没有连接成功，则reject
+      // 启动连接
+      this.wsClient.connect()
+
+      // 设置超时，如果10秒内没有连接成功，则reject
       setTimeout(() => {
-        if (!this.wsClient?.isConnected) {
+        if (!connectionResolved) {
           console.error('❌ WebSocket连接超时')
+          connectionResolved = true
           reject(new Error('WebSocket连接超时'))
         }
-      }, 30000)
+      }, 10000)
     })
   }
 
@@ -552,13 +591,11 @@ export class VocaTaAIChat {
   private handleLLMTextStream(message: LLMTextStreamMessage): void {
     console.log(`🤖 LLM响应: ${message.text} (${message.isComplete ? '完成' : '流式'})`)
 
-    if (!message.isComplete) {
-      // 流式追加文本
-      this.currentLLMResponse += message.text
-    } else {
-      // 完整回复
-      this.currentLLMResponse = message.text
-    }
+    // 修复：始终累积文本，无论是否完成
+    // 流式渲染应该累积所有收到的文本片段
+    this.currentLLMResponse += message.text
+    
+    console.log(`🔍 当前累积文本长度: ${this.currentLLMResponse.length}`)
 
     this.onLLMStreamCallback?.(this.currentLLMResponse, message.isComplete, message.characterName)
 

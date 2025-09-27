@@ -6,31 +6,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.socket.WebSocketHandler;
-import org.springframework.web.reactive.socket.WebSocketMessage;
-import org.springframework.web.reactive.socket.WebSocketSession;
-import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 
+import java.util.*;
+import java.io.ByteArrayOutputStream;
+import java.util.Base64;
+import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.websocket.*;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
-import java.util.Map;
+import java.util.TimeZone;
 
 /**
- * 科大讯飞流式TTS服务实现
- * 基于WebSocket实现真正的流式语音合成
- * API文档: https://www.xfyun.cn/doc/tts/online_tts/API.html
+ * 科大讯飞TTS客户端
+ *
  */
 @Service("xunfeiTtsClient")
 public class XunfeiStreamTtsClient implements TtsClient {
@@ -53,9 +52,8 @@ public class XunfeiStreamTtsClient implements TtsClient {
     private String path;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ReactorNettyWebSocketClient webSocketClient = new ReactorNettyWebSocketClient();
 
-    // 支持的语音列表（根据科大讯飞官方文档）
+    // 支持的语音列表
     private static final String[] SUPPORTED_VOICES = {
         "xiaoyan",              // 小燕（女声，推荐）
         "xiaoyu",               // 小宇（男声）
@@ -80,7 +78,7 @@ public class XunfeiStreamTtsClient implements TtsClient {
 
     @Override
     public String getProviderName() {
-        return "科大讯飞流式TTS";
+        return "科大讯飞TTS WebSocket API";
     }
 
     @Override
@@ -125,14 +123,13 @@ public class XunfeiStreamTtsClient implements TtsClient {
                    config.getVoiceId(), actualVoiceId);
 
         return textStream
-                // 优化缓冲策略：按句子分割或时间窗口
                 .bufferTimeout(3, java.time.Duration.ofMillis(300))
                 .concatMap(textList -> {
                     String combinedText = String.join("", textList);
                     if (combinedText.trim().isEmpty()) {
                         return Flux.empty();
                     }
-                    return streamSynthesizeTextWithResult(combinedText, config);
+                    return synthesizeSingleTextWithResult(combinedText, config);
                 })
                 .onErrorResume(error -> {
                     logger.error("科大讯飞TTS流式合成失败", error);
@@ -142,7 +139,6 @@ public class XunfeiStreamTtsClient implements TtsClient {
 
     @Override
     public Flux<byte[]> streamSynthesize(Flux<String> textStream, TtsConfig config) {
-        // 重用新方法，但只返回音频数据
         return streamSynthesizeWithText(textStream, config)
                 .map(TtsResult::getAudioData);
     }
@@ -158,434 +154,68 @@ public class XunfeiStreamTtsClient implements TtsClient {
         }
 
         String actualVoiceId = getXunfeiVoiceId(config.getVoiceId());
-        logger.info("开始科大讯飞语音合成，文本长度: {}, 输入音色: {} -> 实际使用: {}",
+        logger.info("开始科大讯飞WebSocket TTS合成，文本长度: {}, 输入音色: {} -> 实际使用: {}",
                    text.length(), config.getVoiceId(), actualVoiceId);
 
-        return streamSynthesizeText(text, config)
-                .collectList()
-                .map(audioChunks -> {
-                    // 合并所有音频块
-                    int totalSize = audioChunks.stream().mapToInt(chunk -> chunk.length).sum();
-                    byte[] completeAudio = new byte[totalSize];
-                    int offset = 0;
-                    for (byte[] chunk : audioChunks) {
-                        System.arraycopy(chunk, 0, completeAudio, offset, chunk.length);
-                        offset += chunk.length;
-                    }
-
-                    TtsResult result = new TtsResult();
-                    result.setAudioData(completeAudio);
-                    result.setAudioFormat(config.getAudioFormat());
-                    result.setSampleRate(config.getSampleRate());
-                    result.setVoiceId(getXunfeiVoiceId(config.getVoiceId()));
-                    result.setDurationSeconds(estimateAudioDuration(text));
-
-                    Map<String, Object> metadata = new HashMap<>();
-                    metadata.put("provider", "XunfeiTTS");
-                    metadata.put("voice_id", config.getVoiceId());
-                    metadata.put("language", config.getLanguage());
-                    metadata.put("streaming", true);
-                    result.setMetadata(metadata);
-
-                    logger.info("科大讯飞TTS合成成功，音频大小: {} bytes", completeAudio.length);
-                    return result;
-                })
-                .onErrorResume(error -> {
-                    logger.error("科大讯飞TTS合成失败", error);
-                    TtsResult errorResult = new TtsResult();
-                    errorResult.setAudioData(new byte[0]);
-                    errorResult.setAudioFormat("error");
-                    errorResult.setDurationSeconds(0);
-
-                    Map<String, Object> metadata = new HashMap<>();
-                    metadata.put("provider", "XunfeiTTS");
-                    metadata.put("error", error.getMessage());
-                    errorResult.setMetadata(metadata);
-
-                    return Mono.just(errorResult);
-                });
+        return Mono.fromCallable(() -> {
+            try {
+                return callXunfeiTtsApi(text, actualVoiceId, config);
+            } catch (Exception e) {
+                logger.error("科大讯飞WebSocket TTS合成失败", e);
+                throw new RuntimeException("TTS合成失败: " + e.getMessage(), e);
+            }
+        });
     }
 
     /**
      * 流式合成单个文本片段，同时返回文字和音频
      */
-    private Flux<TtsResult> streamSynthesizeTextWithResult(String text, TtsConfig config) {
-        try {
-            String wsUrl = buildWebSocketUrl();
-            logger.debug("科大讯飞TTS WebSocket URL: {}", wsUrl);
+    private Flux<TtsResult> synthesizeSingleTextWithResult(String text, TtsConfig config) {
+        logger.info("开始科大讯飞WebSocket流式TTS合成 - 文本: '{}', 长度: {} 字符",
+                   text.length() > 30 ? text.substring(0, 30) + "..." : text,
+                   text.length());
 
-            Sinks.Many<TtsResult> resultSink = Sinks.many().unicast().onBackpressureBuffer();
-
-            return webSocketClient
-                    .execute(URI.create(wsUrl), new TtsResultWebSocketHandler(text, config, resultSink))
-                    .then(Mono.fromRunnable(() -> resultSink.tryEmitComplete()))
-                    .thenMany(resultSink.asFlux())
-                    .doOnNext(result -> logger.debug("收到TTS结果: {} bytes音频, 文字: {}",
-                        result.getAudioData().length, result.getCorrespondingText()))
-                    .doOnComplete(() -> logger.debug("流式合成完成: {}", text))
-                    .doOnError(error -> logger.error("流式合成失败: {}", error.getMessage()));
-
-        } catch (Exception e) {
-            return Flux.error(new RuntimeException("构建科大讯飞TTS WebSocket请求失败", e));
-        }
-    }
-
-    /**
-     * 流式合成单个文本片段
-     */
-    private Flux<byte[]> streamSynthesizeText(String text, TtsConfig config) {
-        try {
-            String wsUrl = buildWebSocketUrl();
-            logger.debug("科大讯飞TTS WebSocket URL: {}", wsUrl);
-
-            Sinks.Many<byte[]> audioSink = Sinks.many().unicast().onBackpressureBuffer();
-
-            return webSocketClient
-                    .execute(URI.create(wsUrl), new TtsWebSocketHandler(text, config, audioSink))
-                    .then(Mono.fromRunnable(() -> audioSink.tryEmitComplete()))
-                    .thenMany(audioSink.asFlux())
-                    .doOnNext(audioChunk -> logger.debug("收到音频块: {} bytes", audioChunk.length))
-                    .doOnComplete(() -> logger.debug("流式合成完成: {}", text))
-                    .doOnError(error -> logger.error("流式合成失败: {}", error.getMessage()));
-
-        } catch (Exception e) {
-            return Flux.error(new RuntimeException("构建科大讯飞TTS WebSocket请求失败", e));
-        }
-    }
-
-    /**
-     * WebSocket处理器
-     */
-    private class TtsWebSocketHandler implements WebSocketHandler {
-        private final String text;
-        private final TtsConfig config;
-        private final Sinks.Many<byte[]> audioSink;
-
-        public TtsWebSocketHandler(String text, TtsConfig config, Sinks.Many<byte[]> audioSink) {
-            this.text = text;
-            this.config = config;
-            this.audioSink = audioSink;
-        }
-
-        @Override
-        public Mono<Void> handle(WebSocketSession session) {
-            // 发送TTS请求
-            Mono<Void> sendRequest = session.send(
-                    Mono.just(session.textMessage(buildTtsRequest(text, config)))
-            );
-
-            // 处理响应
-            Mono<Void> handleResponse = session.receive()
-                    .map(WebSocketMessage::getPayloadAsText)
-                    .doOnNext(this::handleTtsResponse)
-                    .then();
-
-            return Mono.when(sendRequest, handleResponse);
-        }
-
-        private void handleTtsResponse(String response) {
+        return Mono.fromCallable(() -> {
             try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+                String actualVoiceId = getXunfeiVoiceId(config.getVoiceId());
+                TtsResult result = callXunfeiTtsApi(text, actualVoiceId, config);
+                result.setCorrespondingText(text);
+                result.setStartTime(System.currentTimeMillis());
 
-                Integer code = (Integer) responseMap.get("code");
-                if (code != null && code == 0) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
-                    if (data != null) {
-                        String audioBase64 = (String) data.get("audio");
-                        if (audioBase64 != null && !audioBase64.isEmpty()) {
-                            byte[] audioData = Base64.getDecoder().decode(audioBase64);
+                logger.info("科大讯飞WebSocket流式TTS合成完成 - 文本: '{}', 音频大小: {} bytes",
+                           text.length() > 30 ? text.substring(0, 30) + "..." : text,
+                           result.getAudioData().length);
 
-                            // 创建包含文字和音频的TtsResult
-                            TtsResult result = new TtsResult();
-                            result.setAudioData(audioData);
-                            result.setCorrespondingText(extractCorrespondingText(data));
-                            result.setStartTime(System.currentTimeMillis());
-                            result.setAudioFormat(config.getAudioFormat());
-                            result.setSampleRate(config.getSampleRate());
-
-                            // 通过Sinks发送完整的TtsResult，而不仅仅是音频数据
-                            // 注意：这里需要修改Sinks的类型定义
-                            audioSink.tryEmitNext(audioData); // 暂时保持原有接口兼容性
-
-                            logger.debug("收到音频块: {} bytes, 对应文字: {}",
-                                       audioData.length, result.getCorrespondingText());
-                        }
-
-                        Integer status = (Integer) data.get("status");
-                        if (status != null && status == 2) { // 合成完成
-                            audioSink.tryEmitComplete();
-                        }
-                    }
-                } else {
-                    String message = (String) responseMap.get("message");
-                    logger.error("科大讯飞TTS API错误: {} - {}", code, message);
-                    audioSink.tryEmitError(new RuntimeException("科大讯飞TTS API错误: " + code + " - " + message));
-                }
+                return result;
             } catch (Exception e) {
-                logger.error("解析科大讯飞TTS响应失败", e);
-                audioSink.tryEmitError(new RuntimeException("解析科大讯飞TTS响应失败", e));
+                logger.error("科大讯飞WebSocket流式TTS合成失败: {}", e.getMessage(), e);
+                throw new RuntimeException("TTS合成失败: " + e.getMessage(), e);
             }
-        }
-
-        /**
-         * 提取响应中对应的文字内容
-         */
-        private String extractCorrespondingText(Map<String, Object> data) {
-            try {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> ws = (List<Map<String, Object>>) data.get("ws");
-                if (ws != null && !ws.isEmpty()) {
-                    StringBuilder textBuilder = new StringBuilder();
-                    for (Map<String, Object> wordSegment : ws) {
-                        @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> cw = (List<Map<String, Object>>) wordSegment.get("cw");
-                        if (cw != null) {
-                            for (Map<String, Object> word : cw) {
-                                String w = (String) word.get("w");
-                                if (w != null) {
-                                    textBuilder.append(w);
-                                }
-                            }
-                        }
-                    }
-                    return textBuilder.toString();
-                }
-            } catch (Exception e) {
-                logger.warn("提取对应文字失败", e);
-            }
-            return ""; // 如果无法提取文字，返回空字符串
-        }
+        }).flux();
     }
 
     /**
-     * WebSocket处理器 - 同时返回文字和音频
-     */
-    private class TtsResultWebSocketHandler implements WebSocketHandler {
-        private final String text;
-        private final TtsConfig config;
-        private final Sinks.Many<TtsResult> resultSink;
-
-        public TtsResultWebSocketHandler(String text, TtsConfig config, Sinks.Many<TtsResult> resultSink) {
-            this.text = text;
-            this.config = config;
-            this.resultSink = resultSink;
-        }
-
-        @Override
-        public Mono<Void> handle(WebSocketSession session) {
-            logger.info("开始处理科大讯飞TTS WebSocket会话");
-
-            // 发送TTS请求
-            return session.send(Mono.just(session.textMessage(buildTtsRequest(text, config))))
-                    .then(session.receive()
-                        .doOnNext(msg -> logger.info("收到WebSocket消息，类型: {}", msg.getType()))
-                        .map(WebSocketMessage::getPayloadAsText)
-                        .doOnNext(this::handleTtsResponse)
-                        .doOnComplete(() -> logger.info("WebSocket接收完成"))
-                        .then()
-                    );
-        }
-
-        private void handleTtsResponse(String responseText) {
-            try {
-                logger.info("收到科大讯飞TTS响应: {}", responseText);
-
-                Map<String, Object> response = objectMapper.readValue(responseText, Map.class);
-                Integer code = (Integer) response.get("code");
-                String message = (String) response.get("message");
-                String sid = (String) response.get("sid");
-
-                logger.info("解析响应 - code: {}, message: {}, sid: {}", code, message, sid);
-
-                // 打印完整的响应结构以便调试
-                logger.info("完整响应结构: {}", response);
-
-                if (code == null || code != 0) {
-                    logger.error("科大讯飞TTS错误 - code: {}, message: {}", code, message);
-                    resultSink.tryEmitError(new RuntimeException("科大讯飞TTS服务错误: " + message));
-                    return;
-                }
-
-                Map<String, Object> data = (Map<String, Object>) response.get("data");
-                logger.info("data部分内容: {}", data);
-
-                if (data != null) {
-                    Integer status = (Integer) data.get("status");
-                    String audio = (String) data.get("audio");
-
-                    logger.info("status: {}, audio数据存在: {}, audio长度: {}",
-                        status, audio != null, audio != null ? audio.length() : 0);
-
-                    // 提取对应的文字内容
-                    String correspondingText = extractCorrespondingText(data);
-                    logger.debug("提取的对应文字: '{}'", correspondingText);
-
-                    if (audio != null && !audio.isEmpty()) {
-                        logger.info("开始处理Base64音频数据 - Base64长度: {}", audio.length());
-
-                        byte[] audioData = Base64.getDecoder().decode(audio);
-                        logger.info("Base64解码成功 - 音频字节数: {}", audioData.length);
-
-                        // 创建TtsResult对象
-                        TtsResult result = new TtsResult();
-                        result.setAudioData(audioData);
-                        result.setCorrespondingText(correspondingText);
-                        result.setAudioFormat(config.getAudioFormat());
-                        result.setSampleRate(config.getSampleRate());
-                        result.setVoiceId(config.getVoiceId());
-                        result.setStartTime(System.currentTimeMillis());
-
-                        logger.info("TtsResult创建完成，发送到结果流");
-                        resultSink.tryEmitNext(result);
-                    } else {
-                        logger.warn("音频数据为空或null - audio字段: {}", audio);
-                    }
-
-                    // status = 2 表示数据传输完成
-                    if (status != null && status == 2) {
-                        logger.info("科大讯飞TTS数据传输完成 - status: 2");
-                        resultSink.tryEmitComplete();
-                    } else if (status != null) {
-                        logger.debug("TTS传输状态: {}", status);
-                    }
-                } else {
-                    logger.warn("响应中没有data部分");
-                }
-            } catch (Exception e) {
-                logger.error("处理科大讯飞TTS响应失败", e);
-                resultSink.tryEmitError(new RuntimeException("处理TTS响应失败", e));
-            }
-        }
-
-        /**
-         * 提取响应中对应的文字内容
-         */
-        private String extractCorrespondingText(Map<String, Object> data) {
-            try {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> ws = (List<Map<String, Object>>) data.get("ws");
-                if (ws != null && !ws.isEmpty()) {
-                    StringBuilder textBuilder = new StringBuilder();
-                    for (Map<String, Object> wordSegment : ws) {
-                        @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> cw = (List<Map<String, Object>>) wordSegment.get("cw");
-                        if (cw != null) {
-                            for (Map<String, Object> word : cw) {
-                                String w = (String) word.get("w");
-                                if (w != null) {
-                                    textBuilder.append(w);
-                                }
-                            }
-                        }
-                    }
-                    return textBuilder.toString();
-                }
-            } catch (Exception e) {
-                logger.warn("提取对应文字失败", e);
-            }
-            return ""; // 如果无法提取文字，返回空字符串
-        }
-    }
-
-    /**
-     * 构建WebSocket URL（包含鉴权）
-     */
-    private String buildWebSocketUrl() throws Exception {
-        // 使用英文Locale确保时间戳格式正确
-        String timestamp = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
-                .withZone(ZoneId.of("GMT"))
-                .format(Instant.now());
-
-        String signatureOrigin = "host: " + host + "\n" +
-                                "date: " + timestamp + "\n" +
-                                "GET " + path + " HTTP/1.1";
-
-        String signature = hmacSha256(signatureOrigin, secretKey);
-        String authorization = String.format("api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"",
-                apiKey, "hmac-sha256", "host date request-line", signature);
-
-        String authorizationBase64 = Base64.getEncoder().encodeToString(authorization.getBytes(StandardCharsets.UTF_8));
-
-        // 添加调试日志
-        logger.debug("构建WebSocket URL - timestamp: {}", timestamp);
-        logger.debug("签名原文: {}", signatureOrigin);
-        logger.debug("authorization: {}", authorization);
-
-        // authorization参数不进行URL编码，但date和host需要编码
-        return String.format("wss://%s%s?authorization=%s&date=%s&host=%s",
-                host, path,
-                authorizationBase64,  // 不进行URL编码
-                java.net.URLEncoder.encode(timestamp, StandardCharsets.UTF_8),
-                java.net.URLEncoder.encode(host, StandardCharsets.UTF_8));
-    }
-
-    /**
-     * 构建TTS请求JSON
-     */
-    private String buildTtsRequest(String text, TtsConfig config) {
-        try {
-            Map<String, Object> request = new HashMap<>();
-
-            // 通用参数
-            Map<String, Object> common = new HashMap<>();
-            common.put("app_id", appId);
-            request.put("common", common);
-
-            // 业务参数
-            Map<String, Object> business = new HashMap<>();
-            business.put("aue", mapAudioFormat(config.getAudioFormat()));
-            business.put("auf", "audio/L16;rate=" + config.getSampleRate());
-            business.put("vcn", getXunfeiVoiceId(config.getVoiceId()));
-            business.put("speed", (int) (config.getSpeed() * 50)); // 转换为科大讯飞的速度范围
-            business.put("volume", (int) (config.getVolume() * 100)); // 转换为科大讯飞的音量范围
-            business.put("pitch", (int) (config.getPitch() * 50)); // 转换为科大讯飞的音调范围
-            business.put("tte", "UTF8");
-            request.put("business", business);
-
-            // 数据参数
-            Map<String, Object> data = new HashMap<>();
-            data.put("text", Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8)));
-            data.put("status", 2); // 一次性发送全部文本
-            request.put("data", data);
-
-            String requestJson = objectMapper.writeValueAsString(request);
-            logger.debug("科大讯飞TTS请求: {}", requestJson);
-            return requestJson;
-
-        } catch (Exception e) {
-            throw new RuntimeException("构建科大讯飞TTS请求失败", e);
-        }
-    }
-
-    /**
-     * 获取科大讯飞音色ID - 验证并使用有效的音色参数
-     * 如果传入的音色ID不被支持，则使用默认音色
+     * 获取科大讯飞音色ID
      */
     private String getXunfeiVoiceId(String voiceId) {
-        logger.debug("输入语音ID: {}", voiceId);
-
         if (voiceId == null || voiceId.isEmpty()) {
-            logger.debug("使用默认语音ID: xiaoyan");
-            return "xiaoyan"; // 默认小燕（最基础音色）
+            return "x4_lingxiaoyu_emo"; // 默认小燕
         }
 
         // 检查是否是科大讯飞支持的音色
         for (String supportedVoice : SUPPORTED_VOICES) {
             if (supportedVoice.equals(voiceId)) {
-                logger.debug("使用有效的科大讯飞语音ID: {}", voiceId);
                 return voiceId;
             }
         }
 
-        // 如果传入的音色ID不被支持，记录警告并使用默认音色
+        // 如果传入的音色ID不被支持，使用默认音色
         logger.warn("不支持的音色ID: {}，使用默认音色: xiaoyan", voiceId);
-        return "xiaoyan"; // fallback到最基础的默认音色
+        return "x4_lingxiaoyu_emo";
     }
 
     /**
-     * 映射音频格式
+     * 映射音频格式为科大讯飞API支持的格式
      */
     private String mapAudioFormat(String format) {
         if (format == null) return "lame";
@@ -603,13 +233,179 @@ public class XunfeiStreamTtsClient implements TtsClient {
     }
 
     /**
-     * HMAC-SHA256签名
+     * 调用科大讯飞WebSocket TTS API
      */
-    private String hmacSha256(String data, String key) throws Exception {
+    private TtsResult callXunfeiTtsApi(String text, String voiceId, TtsConfig config) throws Exception {
+        String wsUrl = getWebSocketAuthUrl();
+        logger.info("连接科大讯飞WebSocket TTS API: {}", wsUrl);
+
+        ByteArrayOutputStream audioStream = new ByteArrayOutputStream();
+        AtomicReference<Exception> errorRef = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean isComplete = new AtomicBoolean(false);
+
+        WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+
+        Session wsSession = container.connectToServer(new Endpoint() {
+            @Override
+            public void onOpen(Session session, EndpointConfig endpointConfig) {
+                logger.info("WebSocket连接已建立");
+                session.addMessageHandler(new MessageHandler.Whole<String>() {
+                    @Override
+                    public void onMessage(String message) {
+                        try {
+                            handleTtsResponse(message, audioStream, isComplete, latch);
+                        } catch (Exception e) {
+                            logger.error("处理TTS响应失败", e);
+                            errorRef.set(e);
+                            latch.countDown();
+                        }
+                    }
+                });
+
+                try {
+                    sendTtsRequest(session, text, voiceId, config);
+                } catch (Exception e) {
+                    logger.error("发送TTS请求失败", e);
+                    errorRef.set(e);
+                    latch.countDown();
+                }
+            }
+
+            @Override
+            public void onError(Session session, Throwable throwable) {
+                logger.error("WebSocket连接错误", throwable);
+                errorRef.set(new Exception(throwable));
+                latch.countDown();
+            }
+        }, ClientEndpointConfig.Builder.create().build(), new URI(wsUrl));
+
+        boolean finished = latch.await(30, TimeUnit.SECONDS);
+
+        if (wsSession.isOpen()) {
+            wsSession.close();
+        }
+
+        if (!finished) {
+            throw new RuntimeException("TTS合成超时");
+        }
+
+        if (errorRef.get() != null) {
+            throw errorRef.get();
+        }
+
+        byte[] audioData = audioStream.toByteArray();
+
+        if (audioData.length == 0) {
+            throw new RuntimeException("未收到音频数据");
+        }
+
+        TtsResult result = new TtsResult();
+        result.setAudioData(audioData);
+        result.setAudioFormat(config.getAudioFormat());
+        result.setSampleRate(config.getSampleRate());
+        result.setVoiceId(voiceId);
+        result.setDurationSeconds(estimateAudioDuration(text));
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("provider", "XunfeiTTS-WebSocket-API");
+        metadata.put("voice_id", voiceId);
+        metadata.put("language", config.getLanguage());
+        metadata.put("audioSize", audioData.length);
+        result.setMetadata(metadata);
+
+        logger.info("科大讯飞WebSocket TTS合成完成，音频大小: {} bytes", audioData.length);
+        return result;
+    }
+
+    /**
+     * 处理TTS响应消息
+     */
+    private void handleTtsResponse(String message, ByteArrayOutputStream audioStream,
+                                   AtomicBoolean isComplete, CountDownLatch latch) throws Exception {
+        Map<String, Object> response = objectMapper.readValue(message, Map.class);
+
+        Integer code = (Integer) response.get("code");
+        if (code != null && code != 0) {
+            String errorMsg = (String) response.get("message");
+            throw new RuntimeException("TTS API错误: " + code + " - " + errorMsg);
+        }
+
+        Map<String, Object> data = (Map<String, Object>) response.get("data");
+        if (data != null) {
+            String audioBase64 = (String) data.get("audio");
+            if (audioBase64 != null && !audioBase64.isEmpty()) {
+                byte[] audioChunk = Base64.getDecoder().decode(audioBase64);
+                audioStream.write(audioChunk);
+                logger.debug("收到音频数据块: {} bytes", audioChunk.length);
+            }
+
+            Integer status = (Integer) data.get("status");
+            if (status != null && status == 2) {
+                logger.info("音频数据接收完成");
+                isComplete.set(true);
+                latch.countDown();
+            }
+        }
+    }
+
+    /**
+     * 发送TTS请求
+     */
+    private void sendTtsRequest(Session session, String text, String voiceId, TtsConfig config) throws Exception {
+        Map<String, Object> request = new HashMap<>();
+
+        Map<String, Object> common = new HashMap<>();
+        common.put("app_id", appId);
+        request.put("common", common);
+
+        Map<String, Object> business = new HashMap<>();
+        business.put("aue", mapAudioFormat(config.getAudioFormat()));
+        business.put("vcn", voiceId);
+        business.put("speed", (int)(config.getSpeed() * 50));
+        business.put("volume", (int)(config.getVolume() * 100));
+        business.put("pitch", (int)(config.getPitch() * 50));
+        business.put("tte", "UTF8");
+        request.put("business", business);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("status", 2);
+        data.put("text", Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8)));
+        request.put("data", data);
+
+        String requestJson = objectMapper.writeValueAsString(request);
+        session.getBasicRemote().sendText(requestJson);
+        logger.info("已发送TTS请求，文本长度: {} 字符", text.length());
+    }
+
+    /**
+     * 生成WebSocket认证URL
+     */
+    private String getWebSocketAuthUrl() throws Exception {
+        URL url = new URL("https://" + host + path);
+        SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);
+        format.setTimeZone(TimeZone.getTimeZone("GMT"));
+        String date = format.format(new Date());
+
+        String signatureOrigin = "host: " + host + "\n" +
+                                "date: " + date + "\n" +
+                                "GET " + path + " HTTP/1.1";
+
         Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        return Base64.getEncoder().encodeToString(hash);
+        SecretKeySpec spec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        mac.init(spec);
+        byte[] hexDigits = mac.doFinal(signatureOrigin.getBytes(StandardCharsets.UTF_8));
+        String signature = Base64.getEncoder().encodeToString(hexDigits);
+
+        String authorization = String.format("api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"",
+                                            apiKey, "hmac-sha256", "host date request-line", signature);
+
+        String authBase64 = Base64.getEncoder().encodeToString(authorization.getBytes(StandardCharsets.UTF_8));
+
+        return String.format("wss://%s%s?authorization=%s&date=%s&host=%s",
+                           host, path,
+                           java.net.URLEncoder.encode(authBase64, "UTF-8"),
+                           java.net.URLEncoder.encode(date, "UTF-8"),
+                           host);
     }
 }

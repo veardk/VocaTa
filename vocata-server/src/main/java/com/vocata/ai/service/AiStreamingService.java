@@ -46,7 +46,7 @@ public class AiStreamingService {
     @Autowired
     private LlmProvider llmProvider;
 
-    @Value("${gemini.api.default-model:gemini-2.5-flash-lite}")
+    @Value("${qiniu.ai.default-model:x-ai/grok-4-fast}")
     private String defaultLlmModel;
 
     @Autowired

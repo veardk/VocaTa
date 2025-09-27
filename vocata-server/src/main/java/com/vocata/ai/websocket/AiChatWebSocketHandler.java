@@ -247,44 +247,69 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
     }
 
     /**
-     * 发送TTS音频流 - 同时发送音频数据和元数据（确保流式）
+     * 发送TTS音频流 - 使用二进制分片传输避免64KB限制
      */
     private void sendTtsAudioStream(WebSocketSession session, byte[] audioData) {
         try {
-            logger.info("【TTS输出】发送音频数据到前端 - 大小: {} bytes, 格式: PCM/WAV", audioData.length);
+            logger.info("【TTS输出】发送音频数据到前端 - 大小: {} bytes", audioData.length);
 
-            // 1. 发送音频元数据（先发送元数据，让前端准备接收）
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+            // 先发送音频元数据（JSON格式）
+            Map<String, Object> audioMeta = Map.of(
                     "type", "tts_audio_meta",
                     "audioSize", audioData.length,
-                    "format", "wav", // 火山引擎TTS返回WAV格式
-                    "sampleRate", 16000, // 标准采样率
+                    "format", "mp3", // 科大讯飞TTS返回MP3格式
+                    "sampleRate", 24000, // 科大讯飞采样率
                     "channels", 1, // 单声道
                     "bitDepth", 16, // 16位深度
                     "timestamp", System.currentTimeMillis()
-            ))));
+            );
+            String audioMetaJson = objectMapper.writeValueAsString(audioMeta);
+            logger.info("【TTS输出】发送音频元数据: {}", audioMetaJson);
+            session.sendMessage(new TextMessage(audioMetaJson));
 
-            // 2. 发送原始音频数据作为二进制消息（流式音频数据）
-            session.sendMessage(new BinaryMessage(audioData));
+            // 检查音频数据大小，如果超过50KB则分片传输
+            final int MAX_CHUNK_SIZE = 50 * 1024; // 50KB每片，留有余量
 
-            logger.info("【TTS输出】音频数据发送完成 - 前端可直接播放");
+            if (audioData.length <= MAX_CHUNK_SIZE) {
+                // 小于50KB，直接发送二进制消息
+                session.sendMessage(new BinaryMessage(audioData));
+                logger.info("【TTS输出】音频数据一次性发送完成 - {} bytes", audioData.length);
+            } else {
+                // 大于50KB，分片发送
+                int totalChunks = (int) Math.ceil((double) audioData.length / MAX_CHUNK_SIZE);
+                logger.info("【TTS输出】音频数据过大，分{}片发送 - 总大小: {} bytes", totalChunks, audioData.length);
 
-        } catch (IOException e) {
+                for (int i = 0; i < totalChunks; i++) {
+                    int start = i * MAX_CHUNK_SIZE;
+                    int end = Math.min(start + MAX_CHUNK_SIZE, audioData.length);
+                    byte[] chunk = java.util.Arrays.copyOfRange(audioData, start, end);
+
+                    // 发送分片数据
+                    session.sendMessage(new BinaryMessage(chunk));
+                    logger.info("【TTS输出】发送音频分片 {}/{} - {} bytes", i + 1, totalChunks, chunk.length);
+
+                    // 分片间短暂延迟，避免网络拥塞
+                    Thread.sleep(10);
+                }
+                logger.info("【TTS输出】音频分片发送完成 - 共{}片", totalChunks);
+            }
+
+        } catch (Exception e) {
             logger.error("【TTS输出】发送TTS音频流失败", e);
         }
     }
 
     /**
-     * 发送TTS同步结果流 - 同时发送音频数据和对应文字（新功能）
+     * 发送TTS同步结果流 - 先发送文字元数据，再分片传输音频数据
      */
     private void sendTtsResultStream(WebSocketSession session, byte[] audioData, String correspondingText) {
         try {
             logger.info("【TTS同步输出】发送音频和文字数据到前端 - 音频: {} bytes, 文字: '{}'",
                 audioData.length, correspondingText != null ? correspondingText : "");
 
-            // 1. 发送包含文字和音频元数据的消息
+            // 先发送文字和音频元数据（JSON格式）
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
-                    "type", "tts_sync_result",
+                    "type", "tts_sync_meta",
                     "text", correspondingText != null ? correspondingText : "",
                     "audioSize", audioData.length,
                     "format", "mp3", // 科大讯飞TTS返回MP3格式
@@ -294,12 +319,12 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                     "timestamp", System.currentTimeMillis()
             ))));
 
-            // 2. 发送原始音频数据作为二进制消息
-            session.sendMessage(new BinaryMessage(audioData));
+            // 然后分片发送音频数据
+            sendTtsAudioStream(session, audioData);
 
             logger.info("【TTS同步输出】音频和文字数据发送完成 - 前端可同步显示和播放");
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.error("【TTS同步输出】发送TTS同步结果流失败", e);
         }
     }
@@ -483,14 +508,20 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
         try {
             // 尝试从URL参数中获取token
             String uri = session.getUri().toString();
+            logger.info("【认证调试】WebSocket URI: {}", uri);
             String token = null;
 
             if (uri.contains("token=")) {
                 String query = uri.split("\\?")[1];
+                logger.info("【认证调试】查询参数: {}", query);
                 String[] params = query.split("&");
                 for (String param : params) {
+                    logger.info("【认证调试】处理参数: {}", param);
                     if (param.startsWith("token=")) {
                         token = param.substring("token=".length());
+                        // URL解码token
+                        token = java.net.URLDecoder.decode(token, "UTF-8");
+                        logger.info("【认证调试】从URL参数提取token: {}...", token.substring(0, Math.min(token.length(), 20)));
                         break;
                     }
                 }
@@ -498,27 +529,31 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
 
             // 如果URL参数中没有token，尝试从handshake headers中获取
             if (token == null) {
+                logger.info("【认证调试】URL参数中未找到token，尝试从headers获取");
                 token = session.getHandshakeHeaders().getFirst("Authorization");
                 if (token != null && token.startsWith("Bearer ")) {
                     token = token.substring(7);
+                    logger.info("【认证调试】从Authorization header提取token: {}...", token.substring(0, Math.min(token.length(), 20)));
                 }
             }
 
             if (token == null) {
-                logger.error("WebSocket连接缺少认证token");
+                logger.error("【认证失败】WebSocket连接缺少认证token");
                 return null;
             }
 
             // 使用Sa-Token验证token
+            logger.info("【认证调试】开始验证token...");
             Object loginId = StpUtil.getLoginIdByToken(token);
             if (loginId == null) {
-                logger.error("无效的WebSocket认证token: {}", token);
+                logger.error("【认证失败】无效的WebSocket认证token: {}...", token.substring(0, Math.min(token.length(), 20)));
                 return null;
             }
 
+            logger.info("【认证成功】用户ID: {}", loginId);
             return loginId.toString();
         } catch (Exception e) {
-            logger.error("WebSocket用户认证异常", e);
+            logger.error("【认证异常】WebSocket用户认证异常", e);
             return null;
         }
     }

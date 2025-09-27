@@ -7,6 +7,7 @@ import com.vocata.common.utils.UserContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import cn.dev33.satoken.context.SaHolder;
 
 /**
  * Sa-Token配置
@@ -18,6 +19,13 @@ public class SaTokenConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {
+            // 跨域预检请求(OPTIONS)，无需认证
+            SaRouter.match("**").check(r -> {
+                if ("OPTIONS".equals(SaHolder.getRequest().getMethod())) {
+                    return;
+                }
+            });
+
             // 公开接口，无需认证
             SaRouter.match("/api/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**",
                           "/ws/**", "/websocket/**")
