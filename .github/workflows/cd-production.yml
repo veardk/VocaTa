@@ -216,7 +216,7 @@ jobs:
       working-directory: ./vocata-web
       run: |
         # 替换生产环境配置中的占位符
-        sed -i 's/{{PRODUCTION_HOST}}/${{ secrets.PRODUCTION_HOST }}/g' .env.production
+        sed -i "s/{{PRODUCTION_HOST}}/${{ secrets.PRODUCTION_HOST }}/g" .env.production
         cat .env.production
         echo "前端环境配置已更新"
 
@@ -279,7 +279,7 @@ jobs:
       working-directory: ./vocata-admin
       run: |
         # 替换生产环境配置中的占位符
-        sed -i 's/{{PRODUCTION_HOST}}/${{ secrets.PRODUCTION_HOST }}/g' .env.production
+        sed -i "s/{{PRODUCTION_HOST}}/${{ secrets.PRODUCTION_HOST }}/g" .env.production
         cat .env.production
         echo "管理后台环境配置已更新"
 

@@ -93,7 +93,7 @@ sa-token:
   token-prefix: Bearer
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
-    database: 2
+    database: 0
 
 # AI服务配置
 ai:
