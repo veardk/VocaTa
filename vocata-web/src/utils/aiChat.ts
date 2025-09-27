@@ -280,18 +280,44 @@ export class AudioManager {
       // 确保AudioContext已初始化
       await this.ensureAudioContext()
 
-      // 检查浏览器支持情况
+      // 检查浏览器支持情况和兼容性处理
       if (!navigator.mediaDevices) {
-        throw new Error('浏览器不支持mediaDevices API，请使用现代浏览器或HTTPS环境')
+        // 尝试使用旧的API作为降级方案
+        if (navigator.getUserMedia || (navigator as any).webkitGetUserMedia || (navigator as any).mozGetUserMedia) {
+          console.warn('⚠️ 使用降级的getUserMedia API')
+          // 创建一个简单的polyfill
+          navigator.mediaDevices = {
+            getUserMedia: (constraints: MediaStreamConstraints) => {
+              const getUserMedia = navigator.getUserMedia ||
+                                 (navigator as any).webkitGetUserMedia ||
+                                 (navigator as any).mozGetUserMedia
+
+              return new Promise((resolve, reject) => {
+                getUserMedia.call(navigator, constraints, resolve, reject)
+              })
+            }
+          } as any
+        } else {
+          throw new Error('浏览器不支持mediaDevices API，请使用现代浏览器（Chrome、Firefox、Safari）或确保在HTTPS环境下访问')
+        }
       }
 
       if (!navigator.mediaDevices.getUserMedia) {
-        throw new Error('浏览器不支持getUserMedia API')
+        throw new Error('浏览器不支持getUserMedia API，请升级浏览器版本')
       }
 
       // 检查是否在安全上下文中（HTTPS或localhost）
-      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      const isSecureContext = location.protocol === 'https:' ||
+                             location.hostname === 'localhost' ||
+                             location.hostname === '127.0.0.1' ||
+                             location.hostname === '0.0.0.0' ||
+                             // 允许HTTP环境进行测试
+                             location.protocol === 'http:'
+
+      if (!isSecureContext) {
         console.warn('⚠️ 检测到非安全上下文，某些浏览器可能阻止麦克风访问')
+      } else if (location.protocol === 'http:') {
+        console.info('ℹ️ HTTP环境下测试音频功能，建议生产环境使用HTTPS')
       }
 
       console.log('🔍 浏览器环境检查:', {
@@ -302,15 +328,42 @@ export class AudioManager {
         userAgent: navigator.userAgent.substring(0, 100)
       })
 
-      this.audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+      // 尝试获取麦克风权限，HTTP环境下可能需要特殊处理
+      try {
+        this.audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        })
+      } catch (error: any) {
+        // HTTP环境下的特殊错误处理
+        if (location.protocol === 'http:') {
+          console.warn('⚠️ HTTP环境下获取麦克风权限失败，尝试使用更宽松的配置')
+          try {
+            // 尝试更简单的音频配置
+            this.audioStream = await navigator.mediaDevices.getUserMedia({
+              audio: true
+            })
+          } catch (fallbackError: any) {
+            throw new Error(`HTTP环境下无法访问麦克风。请尝试：
+1. 在浏览器设置中允许此网站访问麦克风
+2. 使用Chrome浏览器并启用实验性功能
+3. 或者使用HTTPS环境访问
+原始错误: ${fallbackError.message}`)
+          }
+        } else {
+          throw error
         }
-      })
+      }
+
+      // 检查MediaRecorder支持
+      if (!window.MediaRecorder) {
+        throw new Error('浏览器不支持MediaRecorder API，请使用Chrome、Firefox或Edge浏览器')
+      }
 
       // 检查MediaRecorder支持的格式
       let mimeType = 'audio/webm;codecs=opus'
@@ -320,16 +373,35 @@ export class AudioManager {
           mimeType = 'audio/ogg;codecs=opus'
           if (!MediaRecorder.isTypeSupported(mimeType)) {
             mimeType = 'audio/wav'
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+              // 最后的兜底方案
+              mimeType = 'audio/mpeg'
+              if (!MediaRecorder.isTypeSupported(mimeType)) {
+                console.warn('⚠️ 未找到完全支持的音频格式，使用默认设置')
+                mimeType = '' // 使用浏览器默认格式
+              }
+            }
           }
         }
       }
 
       console.log('🎵 使用音频格式:', mimeType)
 
-      this.mediaRecorder = new MediaRecorder(this.audioStream, {
-        mimeType,
-        audioBitsPerSecond: 16000
-      })
+      // 创建MediaRecorder实例，使用兼容性更好的配置
+      const mediaRecorderOptions: MediaRecorderOptions = {}
+      if (mimeType) {
+        mediaRecorderOptions.mimeType = mimeType
+      }
+      // 只在支持的情况下设置音频比特率
+      try {
+        if (mimeType && MediaRecorder.isTypeSupported(mimeType)) {
+          mediaRecorderOptions.audioBitsPerSecond = 16000
+        }
+      } catch (e) {
+        console.warn('⚠️ 设置音频比特率失败，使用默认设置:', e)
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.audioStream, mediaRecorderOptions)
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && wsClient) {
