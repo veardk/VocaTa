@@ -49,7 +49,6 @@ spring:
           max-idle: 8
           min-idle: 0
 
-
   # 邮件配置
   mail:
     host: smtp.163.com
@@ -68,6 +67,7 @@ spring:
           socketFactory:
             class: javax.net.ssl.SSLSocketFactory
             port: 465
+
 # MyBatis Plus配置
 mybatis-plus:
   configuration:

@@ -323,16 +323,12 @@ public class ConversationServiceImpl implements ConversationService {
     private ConversationResponse convertToResponse(Conversation conversation) {
         ConversationResponse response = new ConversationResponse();
 
-        // 处理可能为NULL的UUID字段
+        // conversation_uuid是永久不变的唯一标识，绝不能修改
         if (conversation.getConversationUuid() != null) {
             response.setConversationUuid(conversation.getConversationUuid().toString());
         } else {
-            // 如果UUID为NULL，生成一个新的并更新数据库
-            UUID newUuid = UUID.randomUUID();
-            conversation.setConversationUuid(newUuid);
-            conversationMapper.updateById(conversation);
-            response.setConversationUuid(newUuid.toString());
-            logger.warn("对话ID {}的UUID为NULL，已自动生成新UUID: {}", conversation.getId(), newUuid);
+            logger.error("严重错误：对话ID {}的conversation_uuid为NULL，这违反了数据完整性约束", conversation.getId());
+            throw new BizException(ApiCode.ERROR, "对话数据异常，请联系管理员");
         }
 
         response.setCharacterId(conversation.getCharacterId().toString());

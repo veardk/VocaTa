@@ -1,5 +1,6 @@
 package com.vocata.ai.websocket;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.vocata.ai.service.AiStreamingService;
 import com.vocata.conversation.service.ConversationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +40,19 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         logger.info("AI语音WebSocket连接建立: {}", session.getId());
+
+        // 验证用户身份
+        String authenticatedUserId = authenticateUser(session);
+        if (authenticatedUserId == null) {
+            logger.error("WebSocket连接验证失败，关闭连接: {}", session.getId());
+            session.close(CloseStatus.NOT_ACCEPTABLE.withReason("身份验证失败"));
+            return;
+        }
+
+        // 将认证的用户ID存储到session中
+        session.getAttributes().put("authenticatedUserId", authenticatedUserId);
+        logger.info("WebSocket用户认证成功: {} - 用户ID: {}", session.getId(), authenticatedUserId);
+
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
                 "type", "status",
                 "message", "WebSocket连接已建立",
@@ -71,16 +85,18 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
 
         logger.debug("接收音频数据: {} bytes", audioData.length);
 
-        // 从URI中提取对话ID和用户ID
+        // 从URI中提取对话UUID
         String uri = session.getUri().toString();
         String conversationUuid = extractConversationUuid(uri);
-        String userId = extractUserId(uri);
 
-        if (conversationUuid != null && userId != null) {
+        // 使用认证的用户ID，不信任URL参数
+        String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
+
+        if (conversationUuid != null && authenticatedUserId != null) {
             // 实时处理音频数据 - 流式STT处理
-            processAudioStreamRealTime(session, conversationUuid, userId, audioData);
+            processAudioStreamRealTime(session, conversationUuid, authenticatedUserId, audioData);
         } else {
-            sendErrorMessage(session, "无效的请求URI");
+            sendErrorMessage(session, "无效的请求URI或身份验证失败");
         }
     }
 
@@ -366,16 +382,18 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
         if (audioSink != null) {
             audioSink.tryEmitComplete();
 
-            // 从URI中提取对话ID和用户ID
+            // 从URI中提取对话UUID
             String uri = session.getUri().toString();
             String conversationUuid = extractConversationUuid(uri);
-            String userId = extractUserId(uri);
 
-            if (conversationUuid != null && userId != null) {
-                logger.info("开始处理语音消息，会话: {}, 用户: {}", conversationUuid, userId);
+            // 使用认证的用户ID，不信任URL参数
+            String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
+
+            if (conversationUuid != null && authenticatedUserId != null) {
+                logger.info("开始处理语音消息，会话: {}, 用户: {}", conversationUuid, authenticatedUserId);
 
                 // 异步处理音频流
-                aiStreamingService.processVoiceMessage(conversationUuid, userId, audioSink.asFlux())
+                aiStreamingService.processVoiceMessage(conversationUuid, authenticatedUserId, audioSink.asFlux())
                         .subscribe(
                                 response -> {
                                     try {
@@ -457,6 +475,54 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
         ))));
     }
 
+    /**
+     * 验证WebSocket用户身份
+     * 从URL参数或Header中获取token，验证并返回用户ID
+     */
+    private String authenticateUser(WebSocketSession session) {
+        try {
+            // 尝试从URL参数中获取token
+            String uri = session.getUri().toString();
+            String token = null;
+
+            if (uri.contains("token=")) {
+                String query = uri.split("\\?")[1];
+                String[] params = query.split("&");
+                for (String param : params) {
+                    if (param.startsWith("token=")) {
+                        token = param.substring("token=".length());
+                        break;
+                    }
+                }
+            }
+
+            // 如果URL参数中没有token，尝试从handshake headers中获取
+            if (token == null) {
+                token = session.getHandshakeHeaders().getFirst("Authorization");
+                if (token != null && token.startsWith("Bearer ")) {
+                    token = token.substring(7);
+                }
+            }
+
+            if (token == null) {
+                logger.error("WebSocket连接缺少认证token");
+                return null;
+            }
+
+            // 使用Sa-Token验证token
+            Object loginId = StpUtil.getLoginIdByToken(token);
+            if (loginId == null) {
+                logger.error("无效的WebSocket认证token: {}", token);
+                return null;
+            }
+
+            return loginId.toString();
+        } catch (Exception e) {
+            logger.error("WebSocket用户认证异常", e);
+            return null;
+        }
+    }
+
     private String extractConversationUuid(String uri) {
         // 从URI中提取对话标识符: /ws/chat/{conversation_uuid}?userId=1
         try {
@@ -520,29 +586,36 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             return;
         }
 
-        // 从URI中提取对话UUID和用户ID
+        // 从URI中提取对话UUID
         String uri = session.getUri().toString();
         String conversationUuidStr = extractConversationUuid(uri);
-        String userId = extractUserId(uri);
 
-        if (conversationUuidStr == null || userId == null) {
-            sendErrorMessage(session, "无效的请求URI");
+        if (conversationUuidStr == null) {
+            sendErrorMessage(session, "无效的请求URI，缺少对话UUID");
             return;
         }
 
-        logger.info("【文字输入处理】开始处理 - 会话UUID: {}, 用户: {}, 文字内容: '{}'",
-                conversationUuidStr, userId, text);
+        // 使用认证的用户ID，不信任URL参数
+        String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
+        if (authenticatedUserId == null) {
+            sendErrorMessage(session, "用户身份验证失败");
+            return;
+        }
+
+        logger.info("【文字输入处理】开始处理 - 会话UUID: {}, 认证用户: {}, 文字内容: '{}'",
+                conversationUuidStr, authenticatedUserId, text);
 
         try {
             // 调用AiStreamingService处理文字消息
             // 这里直接跳过STT步骤，直接使用文字进行LLM+TTS处理
-            aiStreamingService.processTextMessage(conversationUuidStr, userId, text)
+            aiStreamingService.processTextMessage(conversationUuidStr, authenticatedUserId, text)
                     .subscribe(
                             response -> {
                                 try {
                                     String responseType = (String) response.get("type");
+                                    logger.info("【WebSocket响应】收到响应类型: {}", responseType);
 
-                                    if ("llm_chunk".equals(responseType)) {
+                                    if ("text_chunk".equals(responseType)) {
                                         @SuppressWarnings("unchecked")
                                         Map<String, Object> payload = (Map<String, Object>) response.get("payload");
                                         if (payload != null) {
@@ -557,19 +630,30 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                                                     isFinal != null && isFinal);
                                         }
 
-                                    } else if ("tts_audio".equals(responseType)) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> payload = (Map<String, Object>) response.get("payload");
-                                        if (payload != null) {
-                                            logger.info("【TTS阶段】语音合成完成，音频大小: {} bytes",
-                                                    ((byte[]) payload.get("audio_data")).length);
+                                    } else if ("audio_chunk".equals(responseType)) {
+                                        byte[] audioData = (byte[]) response.get("audio_data");
+                                        if (audioData != null) {
+                                            logger.info("【TTS阶段】收到音频块，大小: {} bytes", audioData.length);
 
                                             // 发送语音响应
-                                            sendTtsAudioResponse(session, payload);
+                                            sendTtsAudioStream(session, audioData);
                                         }
 
+                                    } else if ("audio_complete".equals(responseType)) {
+                                        logger.info("【TTS阶段】音频合成完成");
+                                        // 可以发送音频完成标志
+                                        sendStatusMessage(session, "音频合成完成");
+
+                                    } else if ("complete".equals(responseType)) {
+                                        logger.info("【处理完成】文字消息处理链路完成");
+                                        sendStatusMessage(session, "处理完成");
+
                                     } else if ("error".equals(responseType)) {
-                                        String errorMessage = (String) response.get("message");
+                                        // 错误响应的字段可能是 "error" 或 "message"
+                                        String errorMessage = (String) response.get("error");
+                                        if (errorMessage == null) {
+                                            errorMessage = (String) response.get("message");
+                                        }
                                         logger.error("【处理错误】: {}", errorMessage);
                                         sendErrorMessage(session, errorMessage != null ? errorMessage : "处理失败");
                                     }
@@ -594,7 +678,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                     );
 
         } catch (Exception e) {
-            logger.error("【参数错误】UUID或用户ID格式错误: conversationUuid={}, userId={}", conversationUuidStr, userId);
+            logger.error("【参数错误】UUID或用户ID格式错误: conversationUuid={}, userId={}", conversationUuidStr, authenticatedUserId);
             sendErrorMessage(session, "参数格式错误");
         }
     }

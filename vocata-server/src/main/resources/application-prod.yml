@@ -31,7 +31,7 @@ spring:
           max-idle: 8
           min-idle: 2
 
-  # 邮件配置 - 生产环境
+  # 邮件配置
   mail:
     host: smtp.163.com
     port: 465
@@ -57,7 +57,7 @@ spring:
           timeout: 30000
           writetimeout: 30000
 
-# MyBatis Plus配置 (生产环境关闭SQL日志)
+# MyBatis Plus配置
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
@@ -73,11 +73,11 @@ mybatis-plus:
     banner: false
   mapper-locations: classpath*:/mapper/**/*.xml
 
-# Sa-Token配置 (生产环境安全配置)
+# Sa-Token配置
 sa-token:
   # token名称
   token-name: Authorization
-  # token有效期 (生产环境7天)
+  # token有效期，单位s (7天)
   timeout: 604800
   # token临时有效期，单位s
   active-timeout: -1
@@ -101,30 +101,30 @@ sa-token:
   alone-redis:
     database: 1
 
-# AI服务配置 - 生产环境
+# AI服务配置
 ai:
   llm:
-    provider: ${AI_LLM_PROVIDER:qiniu}  # 生产环境默认使用七牛云AI
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 默认使用七牛云AI
   stt:
     provider: ${AI_STT_PROVIDER:xunfei}
   tts:
     provider: ${AI_TTS_PROVIDER:volcan}
 
-# 七牛云配置 - 生产环境
+# 七牛云配置
 qiniu:
   access-key: ${QINIU_ACCESS_KEY_PROD}
   secret-key: ${QINIU_SECRET_KEY_PROD}
   bucket: ${QINIU_BUCKET_PROD:vocata-files-prod}
   domain: ${QINIU_DOMAIN_PROD:https://files.vocata.com}
   region: ${QINIU_REGION_PROD:huadong}
-  # AI服务配置
+  # 七牛云AI配置
   ai:
     api-key: ${QINIU_AI_API_KEY}
     base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
     default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
     timeout: ${QINIU_AI_TIMEOUT:60}
 
-# Gemini配置 - 生产环境
+# Gemini配置
 gemini:
   api:
     key: ${GEMINI_API_KEY}
@@ -132,7 +132,7 @@ gemini:
     default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     timeout: ${GEMINI_TIMEOUT:60}
 
-# OpenAI配置 - 生产环境
+# OpenAI配置
 openai:
   api:
     key: ${OPENAI_API_KEY}
@@ -140,26 +140,28 @@ openai:
     default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
     timeout: ${OPENAI_TIMEOUT:60}
 
-# 科大讯飞STT/TTS配置 - 生产环境
+# 科大讯飞配置
 xunfei:
+  # STT配置
   stt:
-    app-id: ${XUNFEI_STT_APP_ID:}
-    api-key: ${XUNFEI_STT_API_KEY:}
-    secret-key: ${XUNFEI_STT_SECRET_KEY:}
+    app-id: ${XUNFEI_STT_APP_ID:your-xunfei-stt-app-id}
+    api-key: ${XUNFEI_STT_API_KEY:your-xunfei-stt-api-key}
+    secret-key: ${XUNFEI_STT_SECRET_KEY:your-xunfei-stt-secret-key}
     host: ${XUNFEI_STT_HOST:iat-api.xfyun.cn}
     path: ${XUNFEI_STT_PATH:/v2/iat}
+  # TTS配置
   tts:
-    app-id: ${XUNFEI_TTS_APP_ID:}
-    api-key: ${XUNFEI_TTS_API_KEY:}
-    secret-key: ${XUNFEI_TTS_SECRET_KEY:}
+    app-id: ${XUNFEI_TTS_APP_ID:your-xunfei-tts-app-id}
+    api-key: ${XUNFEI_TTS_API_KEY:your-xunfei-tts-api-key}
+    secret-key: ${XUNFEI_TTS_SECRET_KEY:your-xunfei-tts-secret-key}
     host: ${XUNFEI_TTS_HOST:tts-api.xfyun.cn}
     path: ${XUNFEI_TTS_PATH:/v2/tts}
 
-# 火山引擎TTS配置 - 生产环境
+# 火山引擎TTS配置
 volcan:
   tts:
-    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:}
-    app-id: ${VOLCAN_TTS_APP_ID:}
+    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:your-volcan-access-token}
+    app-id: ${VOLCAN_TTS_APP_ID:your-volcan-app-id}
     host: ${VOLCAN_TTS_HOST:openspeech.bytedance.com}
     region: ${VOLCAN_TTS_REGION:ap-beijing-1}
 
