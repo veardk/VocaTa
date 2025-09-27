@@ -76,7 +76,11 @@ public class UserContext {
      */
     public static boolean isAdmin() {
         UserContextDTO userContext = getOrNull();
-        return userContext != null && userContext.getIsAdmin();
+        if (userContext == null) {
+            return false;
+        }
+        Boolean isAdmin = userContext.getIsAdmin();
+        return isAdmin != null && isAdmin;
     }
 
     /**

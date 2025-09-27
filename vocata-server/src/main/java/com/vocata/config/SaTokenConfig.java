@@ -83,7 +83,11 @@ public class SaTokenConfig implements WebMvcConfigurer {
             userContext.setUserId(userId);
             // 可以从Session中获取更多用户信息
             userContext.setUsername((String) StpUtil.getSession().get("username"));
-            userContext.setIsAdmin((Boolean) StpUtil.getSession().get("isAdmin"));
+
+            // 安全获取isAdmin字段，避免null值
+            Boolean isAdmin = (Boolean) StpUtil.getSession().get("isAdmin");
+            userContext.setIsAdmin(isAdmin != null ? isAdmin : false);
+
             userContext.setEmail((String) StpUtil.getSession().get("email"));
 
             UserContext.set(userContext);

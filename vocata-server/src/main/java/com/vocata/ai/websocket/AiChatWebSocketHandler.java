@@ -2,6 +2,7 @@ package com.vocata.ai.websocket;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.vocata.ai.service.AiStreamingService;
+import com.vocata.ai.service.SttTestService;
 import com.vocata.conversation.service.ConversationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -13,13 +14,15 @@ import org.springframework.web.socket.handler.BinaryWebSocketHandler;
 import reactor.core.publisher.Sinks;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AI语音对话WebSocket处理器
- * 处理语音实时对话: 音频数据接收 -> STT -> LLM -> TTS -> 返回结果
+ * AI语音对话WebSocket处理器 - STT测试模式
+ * 专门用于测试: 音频数据接收 -> STT -> 文字输出到控制台
+ * 跳过LLM和TTS处理，专注于STT功能验证
  */
 @Component
 public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
@@ -28,6 +31,9 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
 
     @Autowired
     private AiStreamingService aiStreamingService;
+
+    @Autowired
+    private SttTestService sttTestService;
 
     @Autowired
     private ConversationService conversationService;
@@ -101,11 +107,12 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
     }
 
     /**
-     * 实时处理音频流 - STT→LLM→TTS流式处理
+     * 实时处理音频流 - 仅STT转文字测试
      */
     private void processAudioStreamRealTime(WebSocketSession session, String conversationUuid, String userId, byte[] audioData) {
         try {
-            logger.info("【实时语音处理】开始处理 - 会话: {}, 用户: {}, 音频大小: {} bytes", conversationUuid, userId, audioData.length);
+            logger.info("🎤【STT测试模式】开始音频转文字 - 会话: {}, 用户: {}, 音频大小: {} bytes",
+                       conversationUuid, userId, audioData.length);
 
             // 参数验证
             try {
@@ -122,93 +129,89 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             audioSink.tryEmitNext(audioData);
             audioSink.tryEmitComplete();
 
-            logger.info("【STT阶段】开始完整的流式语音处理");
+            logger.info("🎤【STT测试模式】开始纯STT识别，跳过LLM和TTS处理");
 
-            // 使用AiStreamingService的完整流式方法
-            aiStreamingService.processVoiceMessage(conversationUuid, userId, audioSink.asFlux())
+//             音频 → STT → LLM → TTS → 完整对话
+//           TODO需要时去除 aiStreamingService.processVoiceMessage(conversationUuid, userId, audioSink.asFlux())
+
+            // 使用SttTestService的专用方法，只做STT转文字
+
+            sttTestService.processAudioToText(conversationUuid, userId, audioSink.asFlux())
                     .subscribe(
                             response -> {
                                 try {
-                                    // 处理 Map<String, Object> 格式的响应
                                     String responseType = (String) response.get("type");
 
                                     if ("stt_result".equals(responseType)) {
                                         @SuppressWarnings("unchecked")
                                         Map<String, Object> payload = (Map<String, Object>) response.get("payload");
                                         if (payload != null) {
-                                            logger.info("【STT阶段】识别结果 - 文本: '{}', 是否最终: {}",
-                                                    payload.get("text"), payload.get("is_final"));
-                                            sendSttResultFromPayload(session, payload);
-                                        }
-
-                                    } else if ("llm_chunk".equals(responseType)) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> payload = (Map<String, Object>) response.get("payload");
-                                        if (payload != null) {
-                                            logger.info("【LLM阶段】流式文本响应 - 内容: '{}', 是否完整: {}",
-                                                    payload.get("text"), payload.get("is_final"));
-
-                                            String text = (String) payload.get("text");
+                                            String recognizedText = (String) payload.get("text");
                                             Boolean isFinal = (Boolean) payload.get("is_final");
-                                            // 发送流式文本响应
-                                            sendLlmTextStream(session, text != null ? text : "",
-                                                    isFinal != null && isFinal);
-                                        }
+                                            Double confidence = (Double) payload.get("confidence");
 
-                                    } else if ("audio_chunk".equals(responseType)) {
-                                        byte[] audioBytes = (byte[]) response.get("audio_data");
-                                        if (audioBytes != null) {
-                                            logger.info("【TTS阶段】语音合成完成 - 音频大小: {} bytes", audioBytes.length);
-                                            sendTtsAudioStream(session, audioBytes);
-                                        }
+                                            logger.info("🎤【STT测试结果】识别文本: '{}', 最终: {}, 置信度: {}",
+                                                       recognizedText, isFinal, confidence);
 
-                                    } else if ("tts_result".equals(responseType)) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> ttsResultMap = (Map<String, Object>) response.get("tts_result");
-                                        if (ttsResultMap != null) {
-                                            byte[] ttsAudioData = (byte[]) ttsResultMap.get("audioData");
-                                            String correspondingText = (String) ttsResultMap.get("correspondingText");
-
-                                            if (ttsAudioData != null) {
-                                                logger.info("【TTS阶段】同步语音合成完成 - 音频: {} bytes, 文字: '{}'",
-                                                    ttsAudioData.length, correspondingText);
-                                                sendTtsResultStream(session, ttsAudioData, correspondingText);
-                                            }
+                                            // 发送STT结果到前端
+                                            sendSttTestResult(session, payload);
                                         }
 
                                     } else if ("complete".equals(responseType)) {
-                                        logger.info("【完整流程】STT→LLM→TTS处理全部完成");
-                                        sendStatusMessage(session, "语音处理完成");
+                                        logger.info("🎤【STT测试完成】音频转文字处理完成");
+                                        sendStatusMessage(session, "STT测试完成");
+
                                     } else if ("error".equals(responseType)) {
                                         String errorMessage = (String) response.get("error");
-                                        logger.error("【流程错误】AI服务错误: {}", errorMessage);
-                                        sendErrorMessage(session, "语音处理失败: " + errorMessage);
+                                        logger.error("🎤【STT测试错误】: {}", errorMessage);
+                                        sendErrorMessage(session, "STT测试失败: " + errorMessage);
                                     }
 
                                 } catch (IOException e) {
-                                    logger.error("【发送错误】发送响应到前端失败", e);
+                                    logger.error("【发送错误】发送STT测试响应失败", e);
                                 }
                             },
                             error -> {
-                                logger.error("【流程错误】实时语音处理失败 - 错误: {}", error.getMessage(), error);
+                                logger.error("🎤【STT测试失败】音频转文字失败: {}", error.getMessage(), error);
                                 try {
-                                    sendErrorMessage(session, "语音处理失败: " + error.getMessage());
+                                    sendErrorMessage(session, "STT测试失败: " + error.getMessage());
                                 } catch (IOException e) {
-                                    logger.error("【发送错误】无法发送错误消息到前端", e);
+                                    logger.error("【发送错误】无法发送错误消息", e);
                                 }
                             },
                             () -> {
-                                logger.info("【流程完成】语音处理链路全部完成");
+                                logger.info("🎤【STT测试完成】音频转文字链路完成");
                             }
                     );
 
         } catch (Exception e) {
-            logger.error("【异常捕获】实时音频处理异常 - 错误: {}", e.getMessage(), e);
+            logger.error("🎤【STT测试异常】音频处理异常: {}", e.getMessage(), e);
             try {
-                sendErrorMessage(session, "音频处理异常: " + e.getMessage());
+                sendErrorMessage(session, "STT测试异常: " + e.getMessage());
             } catch (IOException ex) {
-                logger.error("【发送异常】无法发送异常消息到前端", ex);
+                logger.error("【发送异常】无法发送异常消息", ex);
             }
+        }
+    }
+
+    /**
+     * 发送STT测试结果
+     */
+    private void sendSttTestResult(WebSocketSession session, Map<String, Object> payload) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("type", "stt_test_result");
+            response.put("text", payload.getOrDefault("text", ""));
+            response.put("isFinal", payload.getOrDefault("is_final", false));
+            response.put("confidence", payload.getOrDefault("confidence", 0.0));
+            response.put("character_name", payload.getOrDefault("character_name", "测试角色"));
+            response.put("timestamp", System.currentTimeMillis());
+
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+
+            logger.info("🎤【发送到前端】STT测试结果: {}", response);
+        } catch (IOException e) {
+            logger.error("发送STT测试结果失败", e);
         }
     }
 
@@ -415,8 +418,25 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
 
             if (conversationUuid != null && authenticatedUserId != null) {
-                logger.info("开始处理语音消息，会话: {}, 用户: {}", conversationUuid, authenticatedUserId);
+                logger.info("🎤【STT测试模式】处理语音消息结束，会话: {}, 用户: {}", conversationUuid, authenticatedUserId);
 
+                // ====== STT测试模式：仅控制台输出，跳过完整AI处理 ======
+                logger.info("🎤【STT测试模式】音频录制结束，跳过完整AI流程");
+
+                // 控制台输出
+                System.out.println("========================================");
+                System.out.println("🎤 音频录制结束（STT测试模式）");
+                System.out.println("🆔 会话UUID: " + conversationUuid);
+                System.out.println("👤 用户ID: " + authenticatedUserId);
+                System.out.println("⏰ 时间: " + java.time.LocalDateTime.now());
+                System.out.println("🎯 模式: 仅STT测试，跳过LLM+TTS");
+                System.out.println("========================================");
+
+                // 发送确认响应
+                sendStatusMessage(session, "STT测试模式：音频录制结束");
+
+                // ====== 完整AI模式代码（已注释，需要时取消注释） ======
+                /*
                 // 异步处理音频流
                 aiStreamingService.processVoiceMessage(conversationUuid, authenticatedUserId, audioSink.asFlux())
                         .subscribe(
@@ -469,6 +489,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                                     }
                                 }
                         );
+                */
             } else {
                 sendErrorMessage(session, "无效的请求URI");
             }
@@ -641,6 +662,24 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                 conversationUuidStr, authenticatedUserId, text);
 
         try {
+            // 🎤【STT测试模式】文本消息处理 - 仅输出到控制台，不调用LLM和TTS
+            logger.info("🎤【文本消息测试】收到文本: '{}', 会话: {}, 用户: {}", text, conversationUuidStr, authenticatedUserId);
+
+            // 控制台输出格式化显示
+            System.out.println("========================================");
+            System.out.println("📝 收到文本消息:");
+            System.out.println("💬 内容: " + text);
+            System.out.println("🆔 会话UUID: " + conversationUuidStr);
+            System.out.println("👤 用户ID: " + authenticatedUserId);
+            System.out.println("⏰ 时间: " + java.time.LocalDateTime.now());
+            System.out.println("🎯 模式: STT测试模式 - 跳过LLM+TTS处理");
+            System.out.println("========================================");
+
+            // 发送简单的确认响应给前端
+            sendStatusMessage(session, "STT测试模式：已收到文本消息");
+
+            // TODO====== 完整AI模式代码（已注释，需要时取消注释） ======
+            /*
             // 调用AiStreamingService处理文字消息
             // 这里直接跳过STT步骤，直接使用文字进行LLM+TTS处理
             aiStreamingService.processTextMessage(conversationUuidStr, authenticatedUserId, text)
@@ -711,6 +750,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                                 }
                             }
                     );
+            */
 
         } catch (Exception e) {
             logger.error("【参数错误】UUID或用户ID格式错误: conversationUuid={}, userId={}", conversationUuidStr, authenticatedUserId);
