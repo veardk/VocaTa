@@ -39,8 +39,13 @@ export interface ChatMessage {
   type: 'send' | 'receive',
   content: string,
   senderType?: number, // 1=用户, 2=AI角色
-  contentType?: number, // 1=文本, 2=图片, 3=音频
+  contentType?: number, // 1=文本, 2=语音, 3=图片, 4=音频
   audioUrl?: string | null,
   createDate?: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  // AI对话系统新增字段
+  isStreaming?: boolean, // 是否为流式显示中的消息
+  isRecognizing?: boolean, // 是否为语音识别中的消息
+  characterName?: string, // AI角色名称
+  confidence?: number // 语音识别置信度
 }
