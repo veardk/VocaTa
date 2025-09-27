@@ -280,6 +280,28 @@ export class AudioManager {
       // 确保AudioContext已初始化
       await this.ensureAudioContext()
 
+      // 检查浏览器支持情况
+      if (!navigator.mediaDevices) {
+        throw new Error('浏览器不支持mediaDevices API，请使用现代浏览器或HTTPS环境')
+      }
+
+      if (!navigator.mediaDevices.getUserMedia) {
+        throw new Error('浏览器不支持getUserMedia API')
+      }
+
+      // 检查是否在安全上下文中（HTTPS或localhost）
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        console.warn('⚠️ 检测到非安全上下文，某些浏览器可能阻止麦克风访问')
+      }
+
+      console.log('🔍 浏览器环境检查:', {
+        protocol: location.protocol,
+        hostname: location.hostname,
+        mediaDevices: !!navigator.mediaDevices,
+        getUserMedia: !!navigator.mediaDevices?.getUserMedia,
+        userAgent: navigator.userAgent.substring(0, 100)
+      })
+
       this.audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -296,8 +318,13 @@ export class AudioManager {
         mimeType = 'audio/webm'
         if (!MediaRecorder.isTypeSupported(mimeType)) {
           mimeType = 'audio/ogg;codecs=opus'
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/wav'
+          }
         }
       }
+
+      console.log('🎵 使用音频格式:', mimeType)
 
       this.mediaRecorder = new MediaRecorder(this.audioStream, {
         mimeType,
@@ -308,7 +335,7 @@ export class AudioManager {
         if (event.data.size > 0 && wsClient) {
           event.data.arrayBuffer().then(buffer => {
             wsClient.sendAudioData(buffer)
-            console.log(`🎵 发送音频数据: ${buffer.byteLength} bytes`)
+            console.log(`🎵 发送音频数据: ${buffer.byteLength} bytes (${mimeType})`)
           })
         }
       }
