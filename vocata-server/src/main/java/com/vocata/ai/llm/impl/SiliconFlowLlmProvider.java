@@ -21,13 +21,13 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * 七牛云 AI LLM 提供者实现
- * 支持 x-ai/grok-4-fast 模型
+ * 硅基流动 AI LLM 提供者实现
+ * 支持多种主流AI模型，包括 Claude、GPT、Llama 等
  */
-@Component("qiniuLlmProvider")
-public class QiniuLlmProvider implements LlmProvider, InitializingBean {
+@Component("siliconFlowLlmProvider")
+public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
 
-    private static final Logger logger = LoggerFactory.getLogger(QiniuLlmProvider.class);
+    private static final Logger logger = LoggerFactory.getLogger(SiliconFlowLlmProvider.class);
 
     @Autowired
     private WebClient.Builder webClientBuilder;
@@ -35,37 +35,85 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Value("${qiniu.ai.api-key}")
+    @Value("${siliconflow.ai.api-key}")
     private String apiKey;
 
-    @Value("${qiniu.ai.base-url:https://openai.qiniu.com/v1}")
+    @Value("${siliconflow.ai.base-url:https://api.siliconflow.cn/v1}")
     private String baseUrl;
 
-    @Value("${qiniu.ai.default-model:x-ai/grok-4-fast}")
+    @Value("${siliconflow.ai.default-model:deepseek-ai/DeepSeek-V2.5}")
     private String defaultModel;
 
-    @Value("${qiniu.ai.timeout:60}")
+    @Value("${siliconflow.ai.timeout:120}")
     private int timeoutSeconds;
 
     private WebClient webClient;
 
     @Override
+    public String getProviderName() {
+        return "SiliconFlow AI";
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return apiKey != null && !apiKey.trim().isEmpty() && !apiKey.equals("your-siliconflow-api-key");
+    }
+
+    @Override
     public int getMaxContextLength() {
-        // grok-4-fast 支持 128K tokens 上下文
+        // 根据不同模型返回不同的上下文长度
+        // 这里返回一个通用的较大值，具体模型可以在后续优化
         return 128000;
     }
 
     @Override
     public String[] getSupportedModels() {
         return new String[]{
-            "x-ai/grok-4-fast",
-            "x-ai/grok-4"
+            // Claude 系列
+            "anthropic/claude-3-5-sonnet-20241022",
+            "anthropic/claude-3-5-haiku-20241022",
+            "anthropic/claude-3-haiku-20240307",
+
+            // GPT 系列
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "openai/gpt-4-turbo",
+            "openai/gpt-3.5-turbo",
+
+            // DeepSeek 系列
+            "deepseek-ai/DeepSeek-V2.5",
+            "deepseek-ai/deepseek-llm-67b-chat",
+            "deepseek-ai/deepseek-coder-33b-instruct",
+
+            // Qwen 系列
+            "Qwen/Qwen2.5-72B-Instruct",
+            "Qwen/Qwen2.5-32B-Instruct",
+            "Qwen/Qwen2.5-14B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen2-VL-72B-Instruct",
+
+            // Llama 系列
+            "meta-llama/Meta-Llama-3.1-405B-Instruct",
+            "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+
+            // Yi 系列
+            "01-ai/Yi-1.5-34B-Chat-16K",
+            "01-ai/Yi-1.5-9B-Chat-16K",
+
+            // 其他热门模型
+            "google/gemma-2-27b-it",
+            "google/gemma-2-9b-it",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+            "microsoft/Phi-3.5-mini-instruct"
         };
     }
 
     @Override
     public int estimateTokens(String text) {
-        // 简单估算：1个token大约3个字符（中英文混合）
+        // 中英文混合文本的token估算
         return text == null ? 0 : (text.length() / 3);
     }
 
@@ -76,19 +124,37 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
         // 验证模型名称
         if (config.getModelName() != null) {
             boolean isValidModel = Arrays.asList(getSupportedModels()).contains(config.getModelName());
-            if (!isValidModel) return false;
+            if (!isValidModel) {
+                logger.warn("不支持的模型: {}", config.getModelName());
+                return false;
+            }
         }
 
         // 验证温度参数 (0.0 - 2.0)
         if (config.getTemperature() != null) {
             double temp = config.getTemperature();
-            if (temp < 0.0 || temp > 2.0) return false;
+            if (temp < 0.0 || temp > 2.0) {
+                logger.warn("温度参数超出范围: {}", temp);
+                return false;
+            }
         }
 
         // 验证最大token数
         if (config.getMaxTokens() != null) {
             int maxTokens = config.getMaxTokens();
-            if (maxTokens < 1 || maxTokens > 4096) return false;
+            if (maxTokens < 1 || maxTokens > 32768) {
+                logger.warn("最大token数超出范围: {}", maxTokens);
+                return false;
+            }
+        }
+
+        // 验证top_p参数
+        if (config.getTopP() != null) {
+            double topP = config.getTopP();
+            if (topP < 0.0 || topP > 1.0) {
+                logger.warn("top_p参数超出范围: {}", topP);
+                return false;
+            }
         }
 
         return true;
@@ -98,28 +164,29 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
     public void afterPropertiesSet() {
         this.webClient = webClientBuilder
                 .baseUrl(baseUrl)
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(20 * 1024 * 1024))
                 .build();
 
-        logger.info("七牛云 AI LLM Provider initialized with model: {}", defaultModel);
+        logger.info("硅基流动 AI LLM Provider 初始化完成，默认模型: {}", defaultModel);
     }
 
     @Override
     public Flux<UnifiedAiStreamChunk> streamChat(UnifiedAiRequest request) {
         return Flux.defer(() -> {
             try {
-                Map<String, Object> requestBody = buildQiniuRequest(request);
+                Map<String, Object> requestBody = buildSiliconFlowRequest(request);
                 String model = request.getModelConfig() != null && request.getModelConfig().getModelName() != null
                     ? request.getModelConfig().getModelName()
                     : defaultModel;
 
-                logger.debug("发送七牛云AI请求，模型: {}", model);
+                logger.debug("发送硅基流动AI请求，模型: {}", model);
 
                 return webClient
                         .post()
                         .uri("/chat/completions")
                         .header("Authorization", "Bearer " + apiKey)
                         .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
                         .bodyValue(requestBody)
                         .retrieve()
                         .bodyToFlux(DataBuffer.class)
@@ -138,7 +205,7 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                                     .filter(data -> !data.isEmpty());
                         })
                         .timeout(Duration.ofSeconds(timeoutSeconds))
-                        .flatMap(this::parseQiniuStreamChunk)
+                        .flatMap(this::parseSiliconFlowStreamChunk)
                         .collectList() // 收集所有chunk
                         .flatMapMany(chunks -> {
                             // 手动处理累积内容
@@ -153,12 +220,12 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                                 updatedChunks.add(chunk);
                             }
 
-                            logger.info("七牛云AI响应解析完成，生成{}个chunk，总内容长度: {}",
+                            logger.info("硅基流动AI响应解析完成，生成{}个chunk，总内容长度: {}",
                                 updatedChunks.size(), accumulated.length());
 
                             return Flux.fromIterable(updatedChunks);
                         })
-                        .doOnError(error -> logger.error("七牛云AI API调用失败: {}", error.getMessage()))
+                        .doOnError(error -> logger.error("硅基流动AI API调用失败: {}", error.getMessage()))
                         .onErrorResume(error -> {
                             UnifiedAiStreamChunk errorChunk = new UnifiedAiStreamChunk();
                             errorChunk.setContent("抱歉，AI服务暂时不可用，请稍后再试。");
@@ -168,7 +235,7 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                         });
 
             } catch (Exception e) {
-                logger.error("构建七牛云AI请求失败", e);
+                logger.error("构建硅基流动AI请求失败", e);
                 UnifiedAiStreamChunk errorChunk = new UnifiedAiStreamChunk();
                 errorChunk.setContent("请求构建失败");
                 errorChunk.setAccumulatedContent("请求构建失败");
@@ -178,16 +245,16 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
         });
     }
 
-    private Map<String, Object> buildQiniuRequest(UnifiedAiRequest request) {
+    private Map<String, Object> buildSiliconFlowRequest(UnifiedAiRequest request) {
         Map<String, Object> requestBody = new HashMap<>();
 
-        // 设置模型 - 使用OpenAI兼容格式
+        // 设置模型
         String model = request.getModelConfig() != null && request.getModelConfig().getModelName() != null
             ? request.getModelConfig().getModelName()
             : defaultModel;
         requestBody.put("model", model);
 
-        // 构建消息列表 - OpenAI格式
+        // 构建消息列表 - OpenAI兼容格式
         List<Map<String, Object>> messages = new ArrayList<>();
 
         // 添加系统消息（如果有）
@@ -218,7 +285,7 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
 
         requestBody.put("messages", messages);
 
-        // 配置生成参数 - OpenAI兼容格式
+        // 配置生成参数
         requestBody.put("stream", true); // 启用流式响应
 
         if (request.getModelConfig() != null) {
@@ -228,17 +295,21 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
             if (request.getModelConfig().getMaxTokens() != null) {
                 requestBody.put("max_tokens", request.getModelConfig().getMaxTokens());
             }
+            if (request.getModelConfig().getTopP() != null) {
+                requestBody.put("top_p", request.getModelConfig().getTopP());
+            }
         }
 
         // 默认参数
         requestBody.putIfAbsent("temperature", 0.7);
-        requestBody.putIfAbsent("max_tokens", 2048);
+        requestBody.putIfAbsent("max_tokens", 4096);
+        requestBody.putIfAbsent("top_p", 0.9);
 
-        logger.debug("构建的七牛云AI请求: {}", requestBody);
+        logger.debug("构建的硅基流动AI请求: model={}, messages_count={}", model, messages.size());
         return requestBody;
     }
 
-    private Flux<UnifiedAiStreamChunk> parseQiniuStreamChunk(String jsonData) {
+    private Flux<UnifiedAiStreamChunk> parseSiliconFlowStreamChunk(String jsonData) {
         try {
             JsonNode jsonNode = objectMapper.readTree(jsonData);
 
@@ -246,7 +317,8 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
             if (jsonNode.has("error")) {
                 JsonNode errorNode = jsonNode.get("error");
                 String errorMessage = errorNode.has("message") ? errorNode.get("message").asText() : "Unknown error";
-                logger.error("七牛云AI API返回错误: {}", errorMessage);
+                String errorCode = errorNode.has("code") ? errorNode.get("code").asText() : "";
+                logger.error("硅基流动AI API返回错误: {} (code: {})", errorMessage, errorCode);
 
                 UnifiedAiStreamChunk errorChunk = new UnifiedAiStreamChunk();
                 errorChunk.setContent("服务暂时不可用: " + errorMessage);
@@ -270,10 +342,10 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                     // 检查是否完成
                     String finishReason = choice.has("finish_reason") && !choice.get("finish_reason").isNull()
                         ? choice.get("finish_reason").asText() : null;
-                    boolean isFinished = "stop".equals(finishReason) || "length".equals(finishReason);
+                    boolean isFinished = "stop".equals(finishReason) || "length".equals(finishReason) || "content_filter".equals(finishReason);
                     chunk.setIsFinal(isFinished);
 
-                    logger.debug("解析七牛云AI响应: content={}, isFinished={}", content, isFinished);
+                    logger.debug("解析硅基流动AI响应: content={}, isFinished={}", content, isFinished);
                     return Flux.just(chunk);
                 }
             }
@@ -282,19 +354,9 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
             return Flux.empty();
 
         } catch (Exception e) {
-            logger.error("解析七牛云AI流式响应失败: {}", e.getMessage());
+            logger.error("解析硅基流动AI流式响应失败: {}", e.getMessage());
             logger.debug("失败的响应内容: {}", jsonData);
             return Flux.empty();
         }
-    }
-
-    @Override
-    public String getProviderName() {
-        return "Qiniu AI";
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return apiKey != null && !apiKey.trim().isEmpty() && !apiKey.equals("your-qiniu-ai-api-key");
     }
 }

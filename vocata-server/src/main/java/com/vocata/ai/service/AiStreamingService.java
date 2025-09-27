@@ -234,8 +234,9 @@ public class AiStreamingService {
         // 设置用户消息
         request.setUserMessage(userText);
 
-        // 获取历史对话上下文
-        List<Message> recentMessages = messageMapper.findByConversationIdOrderByCreateDateAsc(conversation.getId());
+        // 获取历史对话上下文 - 限制查询最近20条消息
+        List<Message> recentMessages = messageMapper.findRecentMessagesByConversationId(conversation.getId(), 20);
+        Collections.reverse(recentMessages);
         List<UnifiedAiRequest.ChatMessage> contextMessages = new ArrayList<>();
 
         // 限制上下文长度
