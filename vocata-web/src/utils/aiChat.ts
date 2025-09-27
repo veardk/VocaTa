@@ -296,6 +296,7 @@ export class AudioManager {
       await this.ensureAudioContext()
 
       // 检查浏览器支持情况和兼容性处理
+
       console.log('🔍 初始浏览器检查:', {
         mediaDevices: !!navigator.mediaDevices,
         getUserMedia: !!navigator.getUserMedia,
@@ -309,6 +310,7 @@ export class AudioManager {
       }
 
       // 移除getUserMedia检查，因为我们已经在上面创建了polyfill
+
 
       // 检查是否在安全上下文中（HTTPS或localhost）
       const isSecureContext = location.protocol === 'https:' ||
@@ -340,8 +342,14 @@ export class AudioManager {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
+
         }
-      })
+      }
+
+      // 检查MediaRecorder支持
+      if (!window.MediaRecorder) {
+        throw new Error('浏览器不支持MediaRecorder API，请使用Chrome、Firefox或Edge浏览器')
+      }
 
       console.log('✅ 音频流获取成功:', {
         tracks: this.audioStream.getTracks().length,
@@ -407,8 +415,10 @@ export class AudioManager {
 
       this.mediaRecorder = new MediaRecorder(this.audioStream, mediaRecorderOptions)
 
+
       // 设置VAD音频分析
       await this.setupVAD()
+
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {

@@ -160,6 +160,7 @@ jobs:
 
         # 显示替换后的配置
         echo "=== 替换后的 .env.test 文件 ==="
+
         cat .env.test
         echo "前端环境配置已更新"
 
@@ -227,8 +228,10 @@ jobs:
         # 替换测试环境配置中的占位符
         sed -i "s/{{STAGING_HOST}}/${{ secrets.STAGING_HOST }}/g" .env.test
 
+
         # 显示替换后的配置
         echo "=== 替换后的 .env.test 文件 ==="
+
         cat .env.test
         echo "管理后台环境配置已更新"
 
