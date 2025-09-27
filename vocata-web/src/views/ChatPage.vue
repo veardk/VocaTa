@@ -469,11 +469,15 @@ const setupAIChatCallbacks = () => {
 
   // LLM流式文本回调
   aiChat.value.onLLMStream((text, isComplete, characterName) => {
+    console.log('🎯 onLLMStream回调被触发:', { text, isComplete, characterName })
+    console.log('🎯 当前chats数组长度:', chats.value.length)
+    console.log('🎯 currentStreamingMessage:', currentStreamingMessage.value)
+
     isAIThinking.value = false
 
     if (!currentStreamingMessage.value) {
       // 创建新的流式消息
-      currentStreamingMessage.value = {
+      const newMessage: ChatMessage = {
         type: 'receive',
         content: text,
         senderType: 2,
@@ -481,17 +485,28 @@ const setupAIChatCallbacks = () => {
         createDate: new Date().toISOString(),
         isStreaming: !isComplete
       }
-      chats.value.push(currentStreamingMessage.value)
+      chats.value.push(newMessage)
+      currentStreamingMessage.value = newMessage
+      console.log('🎯 创建新消息并添加到chats，新长度:', chats.value.length)
     } else {
-      // 更新现有的流式消息
-      currentStreamingMessage.value.content = text
-      currentStreamingMessage.value.isStreaming = !isComplete
+      // 更新现有的流式消息 - 找到在chats数组中的索引并直接更新
+      const index = chats.value.findIndex(msg => msg === currentStreamingMessage.value)
+      if (index !== -1) {
+        chats.value[index] = {
+          ...chats.value[index],
+          content: text,
+          isStreaming: !isComplete
+        }
+        currentStreamingMessage.value = chats.value[index]
+        console.log('🎯 更新消息索引:', index, '内容长度:', text.length)
+      }
     }
 
     scrollToBottom()
 
     if (isComplete) {
       // 流式完成，重置状态
+      console.log('🎯 流式完成，重置currentStreamingMessage')
       currentStreamingMessage.value = null
     }
   })

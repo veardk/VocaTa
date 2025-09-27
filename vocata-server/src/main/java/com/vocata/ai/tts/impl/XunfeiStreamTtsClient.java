@@ -375,33 +375,32 @@ public class XunfeiStreamTtsClient implements TtsClient {
 
         @Override
         public Mono<Void> handle(WebSocketSession session) {
+            logger.info("开始处理科大讯飞TTS WebSocket会话");
+
             // 发送TTS请求
-            Mono<Void> sendRequest = session.send(
-                    Mono.just(session.textMessage(buildTtsRequest(text, config)))
-            );
-
-            // 处理响应
-            Mono<Void> handleResponse = session.receive()
-                    .map(WebSocketMessage::getPayloadAsText)
-                    .doOnNext(this::handleTtsResponse)
-                    .then();
-
-            return Mono.zip(sendRequest, handleResponse).then();
+            return session.send(Mono.just(session.textMessage(buildTtsRequest(text, config))))
+                    .then(session.receive()
+                        .doOnNext(msg -> logger.info("收到WebSocket消息，类型: {}", msg.getType()))
+                        .map(WebSocketMessage::getPayloadAsText)
+                        .doOnNext(this::handleTtsResponse)
+                        .doOnComplete(() -> logger.info("WebSocket接收完成"))
+                        .then()
+                    );
         }
 
         private void handleTtsResponse(String responseText) {
             try {
-                logger.debug("收到科大讯飞TTS响应: {}", responseText);
+                logger.info("收到科大讯飞TTS响应: {}", responseText);
 
                 Map<String, Object> response = objectMapper.readValue(responseText, Map.class);
                 Integer code = (Integer) response.get("code");
                 String message = (String) response.get("message");
                 String sid = (String) response.get("sid");
 
-                logger.debug("解析响应 - code: {}, message: {}, sid: {}", code, message, sid);
+                logger.info("解析响应 - code: {}, message: {}, sid: {}", code, message, sid);
 
                 // 打印完整的响应结构以便调试
-                logger.debug("完整响应结构: {}", response);
+                logger.info("完整响应结构: {}", response);
 
                 if (code == null || code != 0) {
                     logger.error("科大讯飞TTS错误 - code: {}, message: {}", code, message);
@@ -410,13 +409,14 @@ public class XunfeiStreamTtsClient implements TtsClient {
                 }
 
                 Map<String, Object> data = (Map<String, Object>) response.get("data");
-                logger.debug("data部分内容: {}", data);
+                logger.info("data部分内容: {}", data);
 
                 if (data != null) {
                     Integer status = (Integer) data.get("status");
                     String audio = (String) data.get("audio");
 
-                    logger.debug("status: {}, audio数据长度: {}", status, audio != null ? audio.length() : 0);
+                    logger.info("status: {}, audio数据存在: {}, audio长度: {}",
+                        status, audio != null, audio != null ? audio.length() : 0);
 
                     // 提取对应的文字内容
                     String correspondingText = extractCorrespondingText(data);
