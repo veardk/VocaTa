@@ -129,6 +129,11 @@ public class CharacterResponse {
     private Long createId;
 
     /**
+     * 创建者用户名
+     */
+    private String creatorName;
+
+    /**
      * 创建时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -283,6 +288,14 @@ public class CharacterResponse {
 
     public void setCreateId(Long createId) {
         this.createId = createId;
+    }
+
+    public String getCreatorName() {
+        return creatorName;
+    }
+
+    public void setCreatorName(String creatorName) {
+        this.creatorName = creatorName;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -43,13 +43,14 @@ public class CharacterOpenController {
     public ApiResponse<PageResult<CharacterResponse>> getPublicCharacters(CharacterSearchRequest request) {
         // 防止空指针异常，设置默认值
         int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
-        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 15; // 默认每页15个
 
         Page<Character> page = new Page<>(pageNum, pageSize);
 
-        IPage<Character> result = characterService.getPublicCharacters(
+        // 使用带创建者名称的查询方法
+        IPage<Map<String, Object>> result = characterService.getPublicCharactersWithCreator(
                 page,
-                CharacterStatus.PUBLISHED, // 只返回已发布的
+                CharacterStatus.PUBLISHED, // 只查询已发布的角色
                 request.getIsFeatured(),
                 request.getTags(),
                 request.getOrderBy(),
@@ -57,7 +58,7 @@ public class CharacterOpenController {
         );
 
         List<CharacterResponse> responseList = result.getRecords().stream()
-                .map(this::convertToResponse)
+                .map(this::convertMapToResponse)
                 .collect(Collectors.toList());
 
         PageResult<CharacterResponse> pageResult = PageResult.of(
@@ -78,7 +79,7 @@ public class CharacterOpenController {
     public ApiResponse<PageResult<CharacterResponse>> searchCharacters(CharacterSearchRequest request) {
         // 防止空指针异常，设置默认值
         int pageNum = request.getPageNum() != null ? request.getPageNum() : 1;
-        int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
+        int pageSize = request.getPageSize() != null ? request.getPageSize() : 15; // 默认每页15个
 
         Page<Character> page = new Page<>(pageNum, pageSize);
 
@@ -122,9 +123,9 @@ public class CharacterOpenController {
      */
     @GetMapping("/featured")
     public ApiResponse<List<CharacterResponse>> getFeaturedCharacters(@RequestParam(defaultValue = "10") int limit) {
-        List<Character> characters = characterService.getFeaturedCharacters(limit);
-        List<CharacterResponse> responses = characters.stream()
-                .map(this::convertToResponse)
+        List<Map<String, Object>> charactersWithCreator = characterService.getFeaturedCharactersWithCreator(limit);
+        List<CharacterResponse> responses = charactersWithCreator.stream()
+                .map(this::convertMapToResponse)
                 .collect(Collectors.toList());
 
         return ApiResponse.success(responses);
@@ -185,6 +186,61 @@ public class CharacterOpenController {
         response.setStatusName(CharacterStatus.getStatusName(character.getStatus()));
         response.setCreatedAt(character.getCreateDate());
         response.setUpdatedAt(character.getUpdateDate());
+        return response;
+    }
+
+    /**
+     * 将Map结果（包含创建者名称）转换为CharacterResponse
+     */
+    private CharacterResponse convertMapToResponse(Map<String, Object> characterMap) {
+        CharacterResponse response = new CharacterResponse();
+
+        // 复制角色基本信息，处理null值
+        response.setId(characterMap.get("id") != null ? Long.valueOf(characterMap.get("id").toString()) : null);
+        response.setCharacterCode((String) characterMap.get("character_code"));
+        response.setName((String) characterMap.get("name"));
+        response.setDescription((String) characterMap.get("description"));
+        response.setGreeting((String) characterMap.get("greeting"));
+        response.setAvatarUrl((String) characterMap.get("avatar_url"));
+        response.setTags((String) characterMap.get("tags"));
+        response.setLanguage((String) characterMap.get("language"));
+
+        Integer status = (Integer) characterMap.get("status");
+        response.setStatus(status);
+        response.setStatusName(CharacterStatus.getStatusName(status));
+
+        response.setIsOfficial((Integer) characterMap.get("is_official"));
+        response.setIsFeatured((Integer) characterMap.get("is_featured"));
+        response.setIsTrending((Integer) characterMap.get("is_trending"));
+        response.setTrendingScore((Integer) characterMap.get("trending_score"));
+        response.setChatCount((Long) characterMap.get("chat_count"));
+        response.setUserCount((Integer) characterMap.get("user_count"));
+        response.setIsPrivate((Boolean) characterMap.get("is_private"));
+
+        // 处理create_id可能为null的情况
+        Object createIdObj = characterMap.get("create_id");
+        if (createIdObj != null) {
+            response.setCreateId(Long.valueOf(createIdObj.toString()));
+        }
+
+        // 处理时间类型转换
+        Object createdAt = characterMap.get("created_at");
+        if (createdAt instanceof java.sql.Timestamp) {
+            response.setCreatedAt(((java.sql.Timestamp) createdAt).toLocalDateTime());
+        } else if (createdAt instanceof java.time.LocalDateTime) {
+            response.setCreatedAt((java.time.LocalDateTime) createdAt);
+        }
+
+        Object updatedAt = characterMap.get("updated_at");
+        if (updatedAt instanceof java.sql.Timestamp) {
+            response.setUpdatedAt(((java.sql.Timestamp) updatedAt).toLocalDateTime());
+        } else if (updatedAt instanceof java.time.LocalDateTime) {
+            response.setUpdatedAt((java.time.LocalDateTime) updatedAt);
+        }
+
+        // 设置创建者名称
+        response.setCreatorName((String) characterMap.get("creator_name"));
+
         return response;
     }
 
