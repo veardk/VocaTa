@@ -8,7 +8,7 @@
       </div>
 
       <div class="chat-container" ref="chatContainer">
-        <div class="chat-item" v-for="(item, index) in chats" :key="item.messageUuid || index">
+        <div class="chat-item" v-for="(item, index) in chats" :key="index">
           <div v-if="item.type == 'receive'" class="receive">
             <div class="avatar"></div>
             <div class="right">
@@ -232,6 +232,11 @@ const loadRecentMessages = async (limit: number = 20) => {
       if (messages.length === 0) {
         await showWelcomeMessage()
       }
+
+      // 加载消息后自动滚动到底部
+      nextTick(() => {
+        scrollToBottom()
+      })
     }
   } catch (error) {
     console.error('加载消息失败:', error)
@@ -339,6 +344,11 @@ const showWelcomeMessage = async () => {
         createDate: new Date().toISOString()
       }
       chats.value.push(welcomeMessage)
+
+      // 显示欢迎消息后滚动到底部
+      nextTick(() => {
+        scrollToBottom()
+      })
     }
   } catch (error) {
     console.error('显示欢迎消息失败:', error)
@@ -395,6 +405,7 @@ const getCharacterName = () => {
 
 // 初始化AI对话系统
 const initializeAIChat = async () => {
+  console.log('🔥 开始初始化AI对话系统...')
   try {
     if (!conversationUuid.value) {
       throw new Error('对话UUID不能为空')
@@ -407,18 +418,23 @@ const initializeAIChat = async () => {
     }
 
     console.log('🚀 初始化AI对话系统 - conversationUuid:', conversationUuid.value)
+    console.log('🔐 Token存在，长度:', token.length)
 
     connectionStatus.value = '正在连接AI系统...'
 
     // 创建AI对话实例
+    console.log('📦 创建VocaTaAIChat实例')
     aiChat.value = new VocaTaAIChat()
 
     // 设置回调函数
+    console.log('🔗 设置AI对话回调函数')
     setupAIChatCallbacks()
 
     // 初始化AI对话系统
+    console.log('⚡ 开始初始化AI对话系统，等待WebSocket连接...')
     await aiChat.value.initialize(conversationUuid.value)
 
+    console.log('✅ AI对话系统初始化完成！')
   } catch (error) {
     console.error('❌ 初始化AI对话系统失败:', error)
     connectionStatus.value = '连接失败，请刷新页面重试'

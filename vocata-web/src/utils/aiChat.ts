@@ -62,6 +62,8 @@ export class VocaTaWebSocketClient {
   }
 
   connect(): void {
+    console.log('🔄 开始建立WebSocket连接，conversationUuid:', this.conversationUuid)
+
     const token = getToken()
     if (!token) {
       console.error('❌ 未找到认证令牌，无法建立WebSocket连接')
@@ -71,9 +73,15 @@ export class VocaTaWebSocketClient {
 
     const wsUrl = `ws://localhost:9009/ws/chat/${this.conversationUuid}?token=${encodeURIComponent(token)}`
     console.log('🔌 尝试连接WebSocket:', wsUrl)
+    console.log('🔐 使用Token:', token.substring(0, 20) + '...')
 
-    this.ws = new WebSocket(wsUrl)
-    this.setupEventHandlers()
+    try {
+      this.ws = new WebSocket(wsUrl)
+      this.setupEventHandlers()
+    } catch (error) {
+      console.error('❌ WebSocket连接创建失败:', error)
+      this.emit('error', error)
+    }
   }
 
   private setupEventHandlers(): void {
@@ -81,6 +89,11 @@ export class VocaTaWebSocketClient {
 
     this.ws.onopen = (event) => {
       console.log('✅ WebSocket连接已建立')
+      console.log('🔍 WebSocket状态检查:', {
+        readyState: this.ws?.readyState,
+        isOpen: this.ws?.readyState === WebSocket.OPEN,
+        WebSocketOPEN: WebSocket.OPEN
+      })
       this.reconnectAttempts = 0
       this.emit('connected', event)
     }
@@ -101,13 +114,14 @@ export class VocaTaWebSocketClient {
     }
 
     this.ws.onclose = (event) => {
-      console.log(`🔌 WebSocket连接关闭: ${event.code} - ${event.reason}`)
+      console.log(`🔌 WebSocket连接关闭: code=${event.code}, reason="${event.reason}", wasClean=${event.wasClean}`)
       this.emit('disconnected', event)
       this.attemptReconnect()
     }
 
     this.ws.onerror = (error) => {
       console.error('❌ WebSocket错误:', error)
+      console.error('WebSocket readyState:', this.ws?.readyState)
       this.emit('error', error)
     }
   }
@@ -220,7 +234,19 @@ export class AudioManager {
 
   async initialize(): Promise<void> {
     try {
-      console.log('🎵 初始化音频上下文...')
+      console.log('🎵 音频管理器初始化完成（延迟初始化AudioContext）')
+      // 不再在初始化时立即创建AudioContext，而是在需要时才创建
+      // 这样避免了浏览器的安全策略限制
+    } catch (error) {
+      console.error('❌ 音频管理器初始化失败:', error)
+      throw error
+    }
+  }
+
+  // 延迟初始化AudioContext，在用户交互后调用
+  private async ensureAudioContext(): Promise<void> {
+    if (!this.audioContext) {
+      console.log('🎵 延迟初始化音频上下文...')
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
 
       // 检查音频上下文状态
@@ -229,15 +255,15 @@ export class AudioManager {
       }
 
       console.log('✅ 音频上下文初始化成功')
-    } catch (error) {
-      console.error('❌ 音频上下文初始化失败:', error)
-      throw error
     }
   }
 
   async startRecording(wsClient: VocaTaWebSocketClient): Promise<void> {
     try {
       console.log('🎤 请求麦克风权限...')
+
+      // 确保AudioContext已初始化
+      await this.ensureAudioContext()
 
       this.audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -334,6 +360,16 @@ export class AudioManager {
     }
 
     this.isPlaying = true
+
+    try {
+      // 确保AudioContext已初始化
+      await this.ensureAudioContext()
+    } catch (error) {
+      console.warn('⚠️ AudioContext初始化失败，跳过音频播放:', error)
+      this.isPlaying = false
+      return
+    }
+
     const audioBuffer = this.audioQueue.shift()!
 
     try {
@@ -421,8 +457,8 @@ export class VocaTaAIChat {
       // 初始化音频管理器
       await this.audioManager.initialize()
 
-      // 建立WebSocket连接
-      this.connectWebSocket(conversationUuid)
+      // 建立WebSocket连接并等待连接成功
+      await this.connectWebSocket(conversationUuid)
 
       console.log('✅ AI对话系统初始化完成')
     } catch (error) {
@@ -431,40 +467,49 @@ export class VocaTaAIChat {
     }
   }
 
-  private connectWebSocket(conversationUuid: string): void {
-    this.wsClient = new VocaTaWebSocketClient(conversationUuid)
+  private connectWebSocket(conversationUuid: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.wsClient = new VocaTaWebSocketClient(conversationUuid)
 
-    // 设置事件监听器
-    this.wsClient.on('connected', () => {
-      console.log('🎉 WebSocket连接成功')
-      this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
+      // 设置事件监听器
+      this.wsClient.on('connected', () => {
+        console.log('🎉 WebSocket连接成功')
+        this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
+        resolve() // 连接成功时resolve Promise
+      })
+
+      this.wsClient.on('message', (message: WebSocketMessage) => {
+        this.handleWebSocketMessage(message)
+      })
+
+      this.wsClient.on('audioData', (audioBuffer: ArrayBuffer) => {
+        this.handleAudioData(audioBuffer)
+      })
+
+      this.wsClient.on('error', (error: any) => {
+        console.error('❌ WebSocket错误:', error)
+        this.onConnectionStatusCallback?.('error', 'WebSocket连接错误')
+        reject(error) // 连接失败时reject Promise
+      })
+
+      this.wsClient.on('disconnected', () => {
+        console.log('📡 WebSocket连接断开，正在重连...')
+        this.onConnectionStatusCallback?.('disconnected', '连接已断开，正在重连...')
+      })
+
+      this.wsClient.on('reconnectFailed', () => {
+        console.error('❌ WebSocket重连失败')
+        this.onConnectionStatusCallback?.('error', '连接失败，请刷新页面重试')
+      })
+
+      // 设置超时，如果30秒内没有连接成功，则reject
+      setTimeout(() => {
+        if (!this.wsClient?.isConnected) {
+          console.error('❌ WebSocket连接超时')
+          reject(new Error('WebSocket连接超时'))
+        }
+      }, 30000)
     })
-
-    this.wsClient.on('message', (message: WebSocketMessage) => {
-      this.handleWebSocketMessage(message)
-    })
-
-    this.wsClient.on('audioData', (audioBuffer: ArrayBuffer) => {
-      this.handleAudioData(audioBuffer)
-    })
-
-    this.wsClient.on('error', (error: any) => {
-      console.error('❌ WebSocket错误:', error)
-      this.onConnectionStatusCallback?.('error', 'WebSocket连接错误')
-    })
-
-    this.wsClient.on('disconnected', () => {
-      console.log('📡 WebSocket连接断开，正在重连...')
-      this.onConnectionStatusCallback?.('disconnected', '连接已断开，正在重连...')
-    })
-
-    this.wsClient.on('reconnectFailed', () => {
-      console.error('❌ WebSocket重连失败')
-      this.onConnectionStatusCallback?.('error', '连接失败，请刷新页面重试')
-    })
-
-    // 建立连接
-    this.wsClient.connect()
   }
 
   private handleWebSocketMessage(message: WebSocketMessage): void {
@@ -599,7 +644,14 @@ export class VocaTaAIChat {
 
   // 获取状态
   get connected(): boolean {
-    return this.wsClient?.isConnected || false
+    const isConnected = this.wsClient?.isConnected || false
+    console.log('🔍 检查连接状态:', {
+      wsClient: !!this.wsClient,
+      readyState: this.wsClient?.readyState,
+      isConnected: isConnected,
+      expectedReadyState: WebSocket.OPEN
+    })
+    return isConnected
   }
 
   get audioCallActive(): boolean {

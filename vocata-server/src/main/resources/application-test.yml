@@ -31,12 +31,12 @@ spring:
           max-idle: 8
           min-idle: 0
 
-  # 邮件配置
+  # 邮件配置（使用QQ邮箱，对云服务器更友好）
   mail:
-    host: ${MAIL_HOST:smtp.163.com}
-    port: ${MAIL_PORT:465}
-    username: ${EMAIL_USER_NAME}
-    password: ${EMAIL_USER_PASSWORD}
+    host: smtp.qq.com
+    port: 587
+    username: ${EMAIL_USER_NAME:your-qq-email@qq.com}
+    password: ${EMAIL_USER_PASSWORD:your-qq-auth-code}
     protocol: smtp
     default-encoding: UTF-8
     test-connection: false
@@ -44,11 +44,12 @@ spring:
       mail:
         smtp:
           auth: true
-          ssl:
+          starttls:
             enable: true
-          socketFactory:
-            class: javax.net.ssl.SSLSocketFactory
-            port: 465
+            required: true
+          timeout: 30000
+          connectiontimeout: 30000
+          writetimeout: 30000
 
 # MyBatis Plus配置
 mybatis-plus:
