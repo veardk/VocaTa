@@ -5,28 +5,25 @@ import com.vocata.ai.stt.SttClient;
 import com.vocata.ai.tts.TtsClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
-import java.util.Map;
+import java.util.List;
 
 /**
  * AI服务配置
  * 根据配置选择合适的LLM、STT和TTS提供者
+ * 修复版本：使用直接参数注入避免循环依赖
  */
 @Configuration
 public class AiServiceConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(AiServiceConfig.class);
 
-    @Autowired
-    private ApplicationContext applicationContext;
-
-    @Value("${ai.llm.provider:gemini}")
+    @Value("${ai.llm.provider:qiniu}")
     private String preferredProvider;
 
     @Value("${ai.stt.provider:xunfei}")
@@ -37,13 +34,25 @@ public class AiServiceConfig {
 
     /**
      * 选择并配置主要的LLM提供者
+     * 使用直接参数注入避免循环依赖
      */
     @Bean
     @Primary
-    public LlmProvider primaryLlmProvider() {
-        Map<String, LlmProvider> providers = applicationContext.getBeansOfType(LlmProvider.class);
+    public LlmProvider primaryLlmProvider(
+            @Qualifier("qiniuLlmProvider") LlmProvider qiniuLlmProvider,
+            @Qualifier("geminiLlmProvider") LlmProvider geminiLlmProvider,
+            @Qualifier("openAiLlmProvider") LlmProvider openAiLlmProvider) {
+        
+        logger.info("开始选择LLM提供者，首选: {}", preferredProvider);
 
-        logger.info("检测到的LLM提供者: {}", providers.keySet());
+        // 构建提供者列表
+        List<LlmProvider> providers = List.of(qiniuLlmProvider, geminiLlmProvider, openAiLlmProvider);
+        
+        // 记录检测到的提供者
+        providers.forEach(provider -> {
+            logger.info("检测到LLM提供者: {} - 可用状态: {}", 
+                provider.getProviderName(), provider.isAvailable());
+        });
 
         // 首先尝试使用配置的首选提供者
         LlmProvider preferredLlmProvider = findProviderByName(providers, preferredProvider);
@@ -53,7 +62,7 @@ public class AiServiceConfig {
         }
 
         // 如果首选提供者不可用，按优先级选择可用的提供者
-        String[] providerPriority = {"qiniu", "gemini", "openai", "mock"};
+        String[] providerPriority = {"qiniu", "gemini", "openai"};
 
         for (String providerName : providerPriority) {
             LlmProvider provider = findProviderByName(providers, providerName);
@@ -63,8 +72,9 @@ public class AiServiceConfig {
             }
         }
 
-        // 如果没有找到可用的提供者，抛出异常
-        throw new RuntimeException("未找到可用的LLM提供者。请检查API配置。");
+        // 如果没有找到可用的提供者，返回第一个提供者作为默认值
+        logger.warn("未找到可用的LLM提供者，使用默认提供者: {}", qiniuLlmProvider.getProviderName());
+        return qiniuLlmProvider;
     }
 
     /**
@@ -72,13 +82,17 @@ public class AiServiceConfig {
      */
     @Bean
     @Primary
-    public SttClient primarySttClient() {
-        Map<String, SttClient> clients = applicationContext.getBeansOfType(SttClient.class);
-
-        logger.info("检测到的STT提供者: {}", clients.keySet());
+    public SttClient primarySttClient(List<SttClient> sttClients) {
+        logger.info("开始选择STT提供者，首选: {}", preferredSttProvider);
+        
+        // 记录检测到的提供者
+        sttClients.forEach(client -> {
+            logger.info("检测到STT提供者: {} - 可用状态: {}", 
+                client.getProviderName(), client.isAvailable());
+        });
 
         // 首先尝试使用配置的首选提供者
-        SttClient preferredSttClient = findSttClientByName(clients, preferredSttProvider);
+        SttClient preferredSttClient = findSttClientByName(sttClients, preferredSttProvider);
         if (preferredSttClient != null && preferredSttClient.isAvailable()) {
             logger.info("使用首选STT提供者: {}", preferredSttClient.getProviderName());
             return preferredSttClient;
@@ -88,15 +102,20 @@ public class AiServiceConfig {
         String[] sttProviderPriority = {"qiniu", "xunfei", "mock"};
 
         for (String providerName : sttProviderPriority) {
-            SttClient client = findSttClientByName(clients, providerName);
+            SttClient client = findSttClientByName(sttClients, providerName);
             if (client != null && client.isAvailable()) {
                 logger.info("使用备用STT提供者: {}", client.getProviderName());
                 return client;
             }
         }
 
-        // 如果没有找到可用的提供者，抛出异常
-        throw new RuntimeException("未找到可用的STT提供者。请检查API配置。");
+        // 如果没有找到可用的提供者，返回第一个提供者作为默认值
+        if (!sttClients.isEmpty()) {
+            logger.warn("未找到可用的STT提供者，使用默认提供者: {}", sttClients.get(0).getProviderName());
+            return sttClients.get(0);
+        }
+
+        throw new RuntimeException("未找到任何STT提供者。请检查配置。");
     }
 
     /**
@@ -104,13 +123,17 @@ public class AiServiceConfig {
      */
     @Bean
     @Primary
-    public TtsClient primaryTtsClient() {
-        Map<String, TtsClient> clients = applicationContext.getBeansOfType(TtsClient.class);
-
-        logger.info("检测到的TTS提供者: {}", clients.keySet());
+    public TtsClient primaryTtsClient(List<TtsClient> ttsClients) {
+        logger.info("开始选择TTS提供者，首选: {}", preferredTtsProvider);
+        
+        // 记录检测到的提供者
+        ttsClients.forEach(client -> {
+            logger.info("检测到TTS提供者: {} - 可用状态: {}", 
+                client.getProviderName(), client.isAvailable());
+        });
 
         // 首先尝试使用配置的首选提供者
-        TtsClient preferredTtsClient = findTtsClientByName(clients, preferredTtsProvider);
+        TtsClient preferredTtsClient = findTtsClientByName(ttsClients, preferredTtsProvider);
         if (preferredTtsClient != null && preferredTtsClient.isAvailable()) {
             logger.info("使用首选TTS提供者: {}", preferredTtsClient.getProviderName());
             return preferredTtsClient;
@@ -120,71 +143,63 @@ public class AiServiceConfig {
         String[] ttsProviderPriority = {"xunfei", "volcan", "mock"};
 
         for (String providerName : ttsProviderPriority) {
-            TtsClient client = findTtsClientByName(clients, providerName);
+            TtsClient client = findTtsClientByName(ttsClients, providerName);
             if (client != null && client.isAvailable()) {
                 logger.info("使用备用TTS提供者: {}", client.getProviderName());
                 return client;
             }
         }
 
-        // 如果没有找到可用的提供者，抛出异常
-        throw new RuntimeException("未找到可用的TTS提供者。请检查API配置。");
-    }
-
-    private LlmProvider findProviderByName(Map<String, LlmProvider> providers, String name) {
-        // 尝试通过bean名称查找
-        String beanName = name.toLowerCase() + "LlmProvider";
-        LlmProvider provider = providers.get(beanName);
-
-        if (provider != null) {
-            return provider;
+        // 如果没有找到可用的提供者，返回第一个提供者作为默认值
+        if (!ttsClients.isEmpty()) {
+            logger.warn("未找到可用的TTS提供者，使用默认提供者: {}", ttsClients.get(0).getProviderName());
+            return ttsClients.get(0);
         }
 
+        throw new RuntimeException("未找到任何TTS提供者。请检查配置。");
+    }
+
+    private LlmProvider findProviderByName(List<LlmProvider> providers, String name) {
         // 尝试通过provider名称查找
-        for (LlmProvider p : providers.values()) {
-            if (p.getProviderName().equalsIgnoreCase(name)) {
+        for (LlmProvider p : providers) {
+            if (p.getProviderName().toLowerCase().contains(name.toLowerCase())) {
                 return p;
             }
         }
-
         return null;
     }
 
-    private SttClient findSttClientByName(Map<String, SttClient> clients, String name) {
-        // 尝试通过bean名称查找
-        String beanName = name.toLowerCase() + "SttClient";
-        SttClient client = clients.get(beanName);
-
-        if (client != null) {
-            return client;
-        }
-
+    private SttClient findSttClientByName(List<SttClient> clients, String name) {
         // 尝试通过provider名称查找
-        for (SttClient c : clients.values()) {
+        for (SttClient c : clients) {
             if (c.getProviderName().toLowerCase().contains(name.toLowerCase())) {
                 return c;
             }
         }
-
         return null;
     }
 
-    private TtsClient findTtsClientByName(Map<String, TtsClient> clients, String name) {
-        // 尝试通过bean名称查找
-        String beanName = name.toLowerCase() + "TtsClient";
-        TtsClient client = clients.get(beanName);
-
-        if (client != null) {
-            return client;
-        }
-
+    private TtsClient findTtsClientByName(List<TtsClient> clients, String name) {
         // 尝试通过provider名称查找
-        for (TtsClient c : clients.values()) {
-            if (c.getProviderName().toLowerCase().contains(name.toLowerCase())) {
+        for (TtsClient c : clients) {
+            String providerName = c.getProviderName().toLowerCase();
+            String searchName = name.toLowerCase();
+
+            // 直接包含匹配
+            if (providerName.contains(searchName)) {
+                return c;
+            }
+
+            // 特殊匹配规则 - 科大讯飞
+            if ("xunfei".equals(searchName) && (providerName.contains("科大讯飞") || providerName.contains("xunfei"))) {
+                return c;
+            }
+
+            // 特殊匹配规则 - 火山引擎
+            if ("volcan".equals(searchName) && (providerName.contains("火山") || providerName.contains("volcan"))) {
                 return c;
             }
         }
-
         return null;
     }
 }

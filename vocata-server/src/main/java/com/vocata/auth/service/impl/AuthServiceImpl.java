@@ -401,6 +401,9 @@ public class AuthServiceImpl implements AuthService {
         user.setId(userId);
         user.setLastLoginTime(LocalDateTime.now());
         user.setLastLoginIp(clientIp);
+        // 手动设置审计字段，因为此时用户还未完全登录，UserContext可能为空
+        user.setUpdateId(userId);
+        user.setUpdateDate(LocalDateTime.now());
         userMapper.updateById(user);
     }
 
@@ -411,6 +414,9 @@ public class AuthServiceImpl implements AuthService {
         User user = getUserById(userId);
         if (user != null) {
             user.setLoginFailCount(user.getLoginFailCount() + 1);
+            // 手动设置审计字段，因为此时用户还未完全登录，UserContext可能为空
+            user.setUpdateId(userId);
+            user.setUpdateDate(LocalDateTime.now());
             userMapper.updateById(user);
         }
     }
@@ -422,6 +428,9 @@ public class AuthServiceImpl implements AuthService {
         User user = new User();
         user.setId(userId);
         user.setLoginFailCount(0);
+        // 手动设置审计字段，因为此时用户还未完全登录，UserContext为空
+        user.setUpdateId(userId);
+        user.setUpdateDate(LocalDateTime.now());
         userMapper.updateById(user);
     }
 
@@ -432,6 +441,9 @@ public class AuthServiceImpl implements AuthService {
         User user = new User();
         user.setId(userId);
         user.setPassword(encodedPassword);
+        // 手动设置审计字段
+        user.setUpdateId(userId);
+        user.setUpdateDate(LocalDateTime.now());
         userMapper.updateById(user);
     }
 
@@ -444,6 +456,9 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(AuthConstants.USER_STATUS_NORMAL);
         user.setLoginFailCount(0);
         user.setLockTime(null);
+        // 手动设置审计字段
+        user.setUpdateId(userId);
+        user.setUpdateDate(LocalDateTime.now());
         userMapper.updateById(user);
     }
 

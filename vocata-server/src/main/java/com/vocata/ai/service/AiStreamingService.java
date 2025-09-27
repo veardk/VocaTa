@@ -275,6 +275,8 @@ public class AiStreamingService {
             message.setTextContent(content);
             message.setCreateId(userId);
             message.setUpdateId(userId);
+            message.setCreateDate(LocalDateTime.now());
+            message.setUpdateDate(LocalDateTime.now());
 
             // 添加处理元数据
             Map<String, Object> metadata = new HashMap<>();
@@ -417,11 +419,26 @@ public class AiStreamingService {
 
             Conversation conversation = conversationService.getConversationByUuid(conversationUuid);
 
-            // 验证对话权限
-            if (!conversation.getUserId().equals(userIdLong)) {
+            if (conversation == null) {
+                logger.error("【错误】未找到对话记录: {}", conversationUuid);
                 Map<String, Object> errorResponse = Map.of(
                     "type", "error",
-                    "error", "无权限访问此对话",
+                    "error", "对话不存在",
+                    "timestamp", System.currentTimeMillis()
+                );
+                return Flux.just(errorResponse);
+            }
+
+            logger.info("找到对话记录: ID={}, 用户ID={}, 角色ID={}",
+                conversation.getId(), conversation.getUserId(), conversation.getCharacterId());
+
+            // 验证对话权限
+            if (!conversation.getUserId().equals(userIdLong)) {
+                logger.error("【权限错误】用户{}尝试访问用户{}的对话{}",
+                    userIdLong, conversation.getUserId(), conversationUuid);
+                Map<String, Object> errorResponse = Map.of(
+                    "type", "error",
+                    "error", "无权限访问此对话，对话属于用户" + conversation.getUserId() + "，当前用户" + userIdLong,
                     "timestamp", System.currentTimeMillis()
                 );
                 return Flux.just(errorResponse);
@@ -429,10 +446,14 @@ public class AiStreamingService {
 
             Character character = characterMapper.selectById(conversation.getCharacterId());
 
+            logger.info("角色查询结果: 角色ID={}, 角色对象={}",
+                conversation.getCharacterId(), character != null ? character.getName() : "null");
+
             if (character == null) {
+                logger.error("【错误】角色不存在: ID={}", conversation.getCharacterId());
                 Map<String, Object> errorResponse = Map.of(
                     "type", "error",
-                    "error", "角色不存在",
+                    "error", "角色不存在，ID: " + conversation.getCharacterId(),
                     "timestamp", System.currentTimeMillis()
                 );
                 return Flux.just(errorResponse);

@@ -1,4 +1,4 @@
-# 测试环境配置 (前后端联调)
+# 测试环境配置
 server:
   port: ${SERVER_PORT:9009}
 
@@ -30,7 +30,8 @@ spring:
           max-wait: -1ms
           max-idle: 8
           min-idle: 0
-  # 邮件配置 (163邮箱SMTP) - 测试环境
+
+  # 邮件配置
   mail:
     host: ${MAIL_HOST:smtp.163.com}
     port: ${MAIL_PORT:465}
@@ -49,7 +50,7 @@ spring:
             class: javax.net.ssl.SSLSocketFactory
             port: 465
 
-# MyBatis Plus配置 (测试环境关闭SQL日志)
+# MyBatis Plus配置
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
@@ -65,11 +66,11 @@ mybatis-plus:
     banner: false
   mapper-locations: classpath*:/mapper/**/*.xml
 
-# Sa-Token配置 (测试环境调整)
+# Sa-Token配置
 sa-token:
   # token名称
   token-name: Authorization
-  # token有效期调整为7天
+  # token有效期，单位s (7天)
   timeout: 604800
   # token临时有效期，单位s
   active-timeout: -1
@@ -93,65 +94,67 @@ sa-token:
   alone-redis:
     database: 2
 
-# AI服务配置 - 测试环境
+# AI服务配置
 ai:
   llm:
-    provider: ${AI_LLM_PROVIDER:qiniu}  # 测试环境默认使用七牛云AI
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 默认使用七牛云AI
   stt:
     provider: ${AI_STT_PROVIDER:xunfei}
   tts:
-    provider: ${AI_TTS_PROVIDER:volcan}
+    provider: ${AI_TTS_PROVIDER:xunfei}
 
-# 七牛云AI配置 - 测试环境
+# 七牛云配置
 qiniu:
-  access-key: ${QINIU_ACCESS_KEY}
-  secret-key: ${QINIU_SECRET_KEY}
+  access-key: ${QINIU_ACCESS_KEY:your-qiniu-access-key}
+  secret-key: ${QINIU_SECRET_KEY:your-qiniu-secret-key}
   bucket: ${QINIU_BUCKET:vocata-files-staging}
   domain: ${QINIU_DOMAIN:https://test-files.vocata.com}
   region: ${QINIU_REGION:huadong}
-  # AI服务配置
+  # 七牛云AI配置
   ai:
-    api-key: ${QINIU_AI_API_KEY:sk-693afd3931f58a166e2a0a4ef6bcec669e334ce3893e86806b0b716b6ef5e956}
+    api-key: ${QINIU_AI_API_KEY:your-qiniu-ai-api-key}
     base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
     default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
     timeout: ${QINIU_AI_TIMEOUT:60}
 
-# Gemini配置 - 测试环境
+# Gemini配置
 gemini:
   api:
-    key: ${GEMINI_API_KEY:AIzaSyBHEceUfr-g1loSqCRm_gTichJCDrn_QHQ}
+    key: ${GEMINI_API_KEY:your-gemini-api-key}
     base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
     default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     timeout: ${GEMINI_TIMEOUT:60}
 
-# OpenAI配置 - 测试环境
+# OpenAI配置
 openai:
   api:
-    key: ${OPENAI_API_KEY:mock-key}
+    key: ${OPENAI_API_KEY:your-openai-api-key}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
     timeout: ${OPENAI_TIMEOUT:60}
 
-# 科大讯飞STT/TTS配置 - 测试环境
+# 科大讯飞配置
 xunfei:
+  # STT配置
   stt:
-    app-id: ${XUNFEI_STT_APP_ID:mock}
-    api-key: ${XUNFEI_STT_API_KEY:mock}
-    secret-key: ${XUNFEI_STT_SECRET_KEY:mock}
+    app-id: ${XUNFEI_STT_APP_ID:your-xunfei-stt-app-id}
+    api-key: ${XUNFEI_STT_API_KEY:your-xunfei-stt-api-key}
+    secret-key: ${XUNFEI_STT_SECRET_KEY:your-xunfei-stt-secret-key}
     host: ${XUNFEI_STT_HOST:iat-api.xfyun.cn}
     path: ${XUNFEI_STT_PATH:/v2/iat}
+  # TTS配置
   tts:
-    app-id: ${XUNFEI_TTS_APP_ID:mock}
-    api-key: ${XUNFEI_TTS_API_KEY:mock}
-    secret-key: ${XUNFEI_TTS_SECRET_KEY:mock}
+    app-id: ${XUNFEI_TTS_APP_ID:your-xunfei-tts-app-id}
+    api-key: ${XUNFEI_TTS_API_KEY:your-xunfei-tts-api-key}
+    secret-key: ${XUNFEI_TTS_SECRET_KEY:your-xunfei-tts-secret-key}
     host: ${XUNFEI_TTS_HOST:tts-api.xfyun.cn}
     path: ${XUNFEI_TTS_PATH:/v2/tts}
 
-# 火山引擎TTS配置 - 测试环境
+# 火山引擎TTS配置
 volcan:
   tts:
-    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:mock}
-    app-id: ${VOLCAN_TTS_APP_ID:mock}
+    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:your-volcan-access-token}
+    app-id: ${VOLCAN_TTS_APP_ID:your-volcan-app-id}
     host: ${VOLCAN_TTS_HOST:openspeech.bytedance.com}
     region: ${VOLCAN_TTS_REGION:ap-beijing-1}
 

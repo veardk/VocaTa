@@ -30,13 +30,30 @@ public class UuidTypeHandler extends BaseTypeHandler<UUID> {
         if (object == null) {
             return null;
         }
+
+        // 添加调试日志
+        System.out.println("UuidTypeHandler - 列名: " + columnName + ", 对象类型: " + object.getClass().getName() + ", 值: " + object);
+
         if (object instanceof UUID) {
             return (UUID) object;
         }
         if (object instanceof String) {
-            return UUID.fromString((String) object);
+            try {
+                return UUID.fromString((String) object);
+            } catch (IllegalArgumentException e) {
+                System.err.println("UUID解析失败，列名: " + columnName + ", 值: " + object + ", 错误: " + e.getMessage());
+                return null;
+            }
         }
-        return null;
+
+        // 处理其他可能的类型（如PostgreSQL的UUID类型）
+        try {
+            String uuidStr = object.toString();
+            return UUID.fromString(uuidStr);
+        } catch (IllegalArgumentException e) {
+            System.err.println("UUID转换失败，列名: " + columnName + ", 对象类型: " + object.getClass().getName() + ", 值: " + object + ", 错误: " + e.getMessage());
+            return null;
+        }
     }
 
     @Override
@@ -45,13 +62,27 @@ public class UuidTypeHandler extends BaseTypeHandler<UUID> {
         if (object == null) {
             return null;
         }
+
         if (object instanceof UUID) {
             return (UUID) object;
         }
         if (object instanceof String) {
-            return UUID.fromString((String) object);
+            try {
+                return UUID.fromString((String) object);
+            } catch (IllegalArgumentException e) {
+                System.err.println("UUID解析失败，列索引: " + columnIndex + ", 值: " + object + ", 错误: " + e.getMessage());
+                return null;
+            }
         }
-        return null;
+
+        // 处理其他可能的类型
+        try {
+            String uuidStr = object.toString();
+            return UUID.fromString(uuidStr);
+        } catch (IllegalArgumentException e) {
+            System.err.println("UUID转换失败，列索引: " + columnIndex + ", 对象类型: " + object.getClass().getName() + ", 值: " + object + ", 错误: " + e.getMessage());
+            return null;
+        }
     }
 
     @Override
@@ -60,12 +91,26 @@ public class UuidTypeHandler extends BaseTypeHandler<UUID> {
         if (object == null) {
             return null;
         }
+
         if (object instanceof UUID) {
             return (UUID) object;
         }
         if (object instanceof String) {
-            return UUID.fromString((String) object);
+            try {
+                return UUID.fromString((String) object);
+            } catch (IllegalArgumentException e) {
+                System.err.println("UUID解析失败，CallableStatement索引: " + columnIndex + ", 值: " + object + ", 错误: " + e.getMessage());
+                return null;
+            }
         }
-        return null;
+
+        // 处理其他可能的类型
+        try {
+            String uuidStr = object.toString();
+            return UUID.fromString(uuidStr);
+        } catch (IllegalArgumentException e) {
+            System.err.println("UUID转换失败，CallableStatement索引: " + columnIndex + ", 对象类型: " + object.getClass().getName() + ", 值: " + object + ", 错误: " + e.getMessage());
+            return null;
+        }
     }
 }

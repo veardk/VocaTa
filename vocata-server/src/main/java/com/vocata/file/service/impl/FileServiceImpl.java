@@ -78,8 +78,8 @@ public class FileServiceImpl implements FileService {
                 throw new BizException(ApiCode.FILE_UPLOAD_FAILED);
             }
 
-            // 构建文件访问URL
-            String fileUrl = qiniuConfig.getDomain() + "/" + fileName;
+            // 构建文件访问URL - 生成带签名的URL
+            String fileUrl = generateSignedUrl(fileName);
 
             return FileUploadResponse.builder()
                     .fileName(fileName)
@@ -116,8 +116,8 @@ public class FileServiceImpl implements FileService {
                 throw new BizException(ApiCode.FILE_UPLOAD_FAILED);
             }
 
-            // 构建文件访问URL
-            String fileUrl = qiniuConfig.getDomain() + "/" + uniqueFileName;
+            // 构建文件访问URL - 生成带签名的URL
+            String fileUrl = generateSignedUrl(uniqueFileName);
 
             log.info("音频文件上传成功: {}, 访问 URL: {}", uniqueFileName, fileUrl);
 
@@ -144,6 +144,40 @@ public class FileServiceImpl implements FileService {
         } catch (QiniuException e) {
             log.error("文件删除失败: {}", fileName, e);
             return false;
+        }
+    }
+
+    /**
+     * 生成带签名的七牛云下载URL
+     *
+     * @param fileName 文件名
+     * @return 带签名的下载URL
+     */
+    private String generateSignedUrl(String fileName) {
+        try {
+            // 构建基础URL，确保使用正确的协议
+            String domain = qiniuConfig.getDomain();
+            
+            // 规范化域名，确保使用http协议（七牛云测试域名通常使用http）
+            if (domain.startsWith("https://")) {
+                domain = domain.replace("https://", "http://");
+            } else if (!domain.startsWith("http://")) {
+                domain = "http://" + domain;
+            }
+            
+            String fullUrl = domain + "/" + fileName;
+            
+            // 生成带签名的下载URL，有效期为1年 (365 * 24 * 3600 秒)
+            long expireInSeconds = System.currentTimeMillis() / 1000 + 365 * 24 * 3600L;
+            String signedUrl = auth.privateDownloadUrl(fullUrl, expireInSeconds);
+            
+            log.debug("生成签名URL成功: {} -> {}", fileName, signedUrl);
+            return signedUrl;
+            
+        } catch (Exception e) {
+            log.error("生成签名URL失败，返回原始URL: {}", e.getMessage(), e);
+            // 如果签名失败，返回原始URL作为降级处理
+            return qiniuConfig.getDomain() + "/" + fileName;
         }
     }
 
