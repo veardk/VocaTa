@@ -6,6 +6,7 @@ import com.vocata.ai.llm.LlmProvider;
 import com.vocata.ai.response.AiStreamingResponse;
 import com.vocata.ai.response.SttResult;
 import com.vocata.ai.response.LlmResponse;
+import com.vocata.ai.service.AiPromptEnhanceService;
 import com.vocata.ai.stt.SttClient;
 import com.vocata.ai.tts.TtsClient;
 import com.vocata.character.entity.Character;
@@ -73,6 +74,10 @@ public class AiStreamingService {
 
     @Autowired
     private FileService fileService;
+
+    @Autowired
+    private AiPromptEnhanceService aiPromptEnhanceService;
+
 
     /**
      * 处理音频输入的完整AI对话链路
@@ -181,24 +186,28 @@ public class AiStreamingService {
 
         return saveUserMessage.thenMany(
             llmProvider.streamChat(llmRequest)
-                    .doOnNext(chunk -> logger.debug("LLM响应块: {}", chunk.getContent()))
-                    .map(chunk -> {
-                        // 转换LLM响应为流式响应
-                        AiStreamingResponse response = new AiStreamingResponse();
-                        response.setType(AiStreamingResponse.ResponseType.LLM_CHUNK);
-                        response.setLlmChunk(chunk);
-                        return response;
-                    })
-                    .concatWith(
-                        // 第三步：收集完整的LLM响应并调用TTS
-                        llmProvider.streamChat(llmRequest)
+                    .replay()
+                    .autoConnect(1)
+                    .publish(llmFlux -> {
+                        Flux<AiStreamingResponse> llmStream = llmFlux
+                                .doOnNext(chunk -> logger.debug("LLM响应块: {}", chunk.getContent()))
+                                .map(chunk -> {
+                                    AiStreamingResponse response = new AiStreamingResponse();
+                                    response.setType(AiStreamingResponse.ResponseType.LLM_CHUNK);
+                                    response.setLlmChunk(chunk);
+                                    return response;
+                                });
+
+                        Flux<AiStreamingResponse> ttsStream = llmFlux
                                 .filter(chunk -> chunk.getIsFinal() != null && chunk.getIsFinal())
                                 .take(1)
                                 .flatMap(finalChunk -> processTtsResponse(conversation.getId(),
                                                                         character,
                                                                         finalChunk.getAccumulatedContent(),
-                                                                        userId))
-                    )
+                                                                        userId));
+
+                        return llmStream.concatWith(ttsStream);
+                    })
         );
     }
 
@@ -248,8 +257,9 @@ public class AiStreamingService {
     private UnifiedAiRequest buildLlmRequest(Conversation conversation, Character character, String userText) {
         UnifiedAiRequest request = new UnifiedAiRequest();
 
-        // 设置系统提示词（角色人设）
-        request.setSystemPrompt(character.getPersona());
+        // 使用系统级提示词增强构建增强的角色人设
+        String enhancedSystemPrompt = aiPromptEnhanceService.buildEnhancedPrompt(character);
+        request.setSystemPrompt(enhancedSystemPrompt);
 
         // 设置用户消息
         request.setUserMessage(userText);
