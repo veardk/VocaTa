@@ -2,17 +2,24 @@
   <div :class="isM ? 'mobile' : 'pc'" class="main-container">
     <div class="header">
       <div class="title">探索</div>
-      <div class="search">
-        <input
-          type="text"
-          v-model="searchInput"
-          placeholder="搜索角色"
-          @input="search"
-          @keyup.enter="search"
-        />
-        <el-icon>
-          <Search />
-        </el-icon>
+      <div class="header-actions">
+        <div class="search">
+          <el-icon class="search-icon">
+            <Search />
+          </el-icon>
+          <input
+            type="text"
+            v-model="searchInput"
+            placeholder="搜索角色"
+            @input="search"
+            @keyup.enter="search"
+          />
+        </div>
+        <div class="notice-btn" @click="showNotice">
+          <el-icon>
+            <Bell />
+          </el-icon>
+        </div>
       </div>
     </div>
 
@@ -112,17 +119,43 @@
         </div>
       </div>
     </div>
-    <el-pagination
-      :size="isM ? 'small' : 'large'"
-      background
-      style="margin: 0.2rem"
-      layout="prev, pager, next,total"
-      :total="total"
-      @prev-click="searchParam.pageNum--"
-      @next-click="searchParam.pageNum++"
-      @current-change="searchParam.pageNum = $event"
-    >
-    </el-pagination>
+    <div class="pagination-container">
+      <el-pagination
+        :size="isM ? 'small' : 'default'"
+        background
+        layout="prev, pager, next, total"
+        :total="total"
+        :page-size="searchParam.pageSize"
+        :current-page="searchParam.pageNum"
+        @prev-click="searchParam.pageNum--"
+        @next-click="searchParam.pageNum++"
+        @current-change="searchParam.pageNum = $event"
+        hide-on-single-page
+      />
+    </div>
+
+    <!-- 通知卡片 -->
+    <div v-if="showNoticeCard" class="notice-overlay" @click="closeNotice">
+      <div class="notice-card" @click.stop>
+        <div class="notice-close" @click="closeNotice">
+          <el-icon><Close /></el-icon>
+        </div>
+
+        <div class="notice-header">
+          <h2>VocaTa平台更新</h2>
+          <p class="notice-date">2024年9月28日</p>
+        </div>
+
+        <div class="notice-content">
+          <h3>📢 角色对话功能上线</h3>
+          <p class="body-text">
+            <strong>新功能已可用！</strong><br><br>
+            VocaTa现在支持角色对话功能。您可以创建角色、进行对话交流，体验更丰富的互动方式。欢迎试用新功能并给我们反馈。
+          </p>
+        </div>
+      </div>
+    </div>
+
     <RoleDialog :item="roleSelected" v-if="infoShow" @close="infoShow = false" />
   </div>
 </template>
@@ -138,6 +171,7 @@ import { computed, onMounted, ref, watch, watchEffect, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatHistoryStore } from '@/store'
 import RoleDialog from './components/RoleDialog.vue'
+import { Search, ChatDotRound, Bell, Close } from '@element-plus/icons-vue'
 const isM = computed(() => isMobile())
 const router = useRouter()
 const my = ref(false)
@@ -156,6 +190,7 @@ const total = ref(0)
 
 const seachStatus = ref(true)
 const infoShow = ref(false)
+const showNoticeCard = ref(false)
 const loading1 = ref(false)
 const loading2 = ref(false)
 // 这里可以放全局逻辑
@@ -294,6 +329,16 @@ const startConversation = async (characterId: string | number) => {
     ElMessage.error('创建对话失败，请稍后重试')
   }
 }
+
+// 显示公告
+const showNotice = () => {
+  showNoticeCard.value = true
+}
+
+// 关闭公告
+const closeNotice = () => {
+  showNoticeCard.value = false
+}
 </script>
 
 <style lang="scss" scoped>
@@ -312,21 +357,42 @@ const startConversation = async (characterId: string | number) => {
       .title {
         font-size: 0.2rem;
       }
+
+      .header-actions {
+        gap: 0.15rem;
+      }
+
       .search {
-        width: 60%;
+        width: 55%;
         max-width: 3rem;
-        height: 0.3rem;
-        padding: 0 0.1rem;
-        input {
-          width: 50%;
+        min-width: 2rem;
+        height: 0.4rem;
+        border: 1px solid #e1e5e9;
+        border-radius: 0.15rem;
+        background-color: #fafbfc;
+
+        .search-icon {
           font-size: 0.2rem;
-          margin: 0;
-          padding: 0 0.05rem;
+          margin: 0 0.08rem 0 0.12rem;
         }
+
+        input {
+          font-size: 0.2rem;
+          padding: 0 0.12rem 0 0;
+
+          &::placeholder {
+            font-size: 0.18rem;
+          }
+        }
+      }
+
+      .notice-btn {
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 0.15rem;
+
         .el-icon {
           font-size: 0.2rem;
-          margin: 0;
-          padding: 0;
         }
       }
     }
@@ -405,42 +471,87 @@ const startConversation = async (characterId: string | number) => {
     font-weight: bold;
   }
 
-  .search {
-    width: 40%;
-    max-width: 4rem;
-    height: 0.5rem;
+  .header-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
-    border: 1px solid #ddd;
-    border-radius: 0.25rem;
+    gap: 0.25rem;
+  }
+
+  .search {
+    width: 35%;
+    max-width: 4.5rem;
+    min-width: 3rem;
+    height: 0.52rem;
+    display: flex;
+    align-items: center;
+    border: 1px solid #e1e5e9;
+    border-radius: 0.2rem;
     overflow: hidden;
-    background-color: #fff;
-    box-shadow: 0 0.02rem 0.08rem rgba(0, 0, 0, 0.1);
+    background-color: #fafbfc;
     transition: all 0.2s ease;
+    font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
 
     &:hover {
-      border-color: #409eff;
-      box-shadow: 0 0.04rem 0.12rem rgba(64, 158, 255, 0.2);
+      border-color: #d1d5db;
+      background-color: #f9fafb;
     }
 
     &:focus-within {
-      border-color: #409eff;
-      box-shadow: 0 0 0 0.02rem rgba(64, 158, 255, 0.2);
+      border-color: #9ca3af;
+      background-color: #fff;
+      box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.1);
     }
+
+    .search-icon {
+      font-size: 0.24rem;
+      color: #9ca3af;
+      margin: 0 0.12rem 0 0.16rem;
+      flex-shrink: 0;
+    }
+
     input {
       flex: 1;
-      height: 95%;
+      height: 100%;
       border: none;
-      padding: 0.2rem;
+      padding: 0 0.16rem 0 0;
       outline: none;
-      font-size: 0.3rem;
+      font-size: 0.22rem;
+      color: #1f2937;
       background-color: transparent;
+      font-family: inherit;
+
+      &::placeholder {
+        font-size: 0.2rem;
+        color: #9ca3af;
+        font-weight: 400;
+      }
     }
+  }
+
+  .notice-btn {
+    width: 0.52rem;
+    height: 0.52rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e1e5e9;
+    border-radius: 0.2rem;
+    background-color: #fafbfc;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: #d1d5db;
+      background-color: #f9fafb;
+    }
+
+    &:active {
+      background-color: #e5e7eb;
+    }
+
     .el-icon {
-      font-size: 0.3rem;
-      margin: 0.2rem;
-      cursor: pointer;
+      font-size: 0.24rem;
+      color: #6b7280;
     }
   }
 }
@@ -652,12 +763,277 @@ const startConversation = async (characterId: string | number) => {
     cursor: pointer;
   }
 }
+
+// 分页容器样式
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem;
+  margin-top: 1rem;
+}
+
+// 分页组件样式优化
 :deep(.el-pagination) {
+  .el-pager {
+    li {
+      min-width: 32px;
+      height: 32px;
+      line-height: 30px;
+      border: 1px solid #dcdfe6;
+      border-radius: 6px;
+      margin: 0 4px;
+      font-size: 14px;
+      font-weight: 400;
+      color: #606266;
+      background-color: #fff;
+      transition: all 0.2s ease;
+      cursor: pointer;
+
+      &:hover {
+        color: #409eff;
+        border-color: #c6e2ff;
+        background-color: #ecf5ff;
+      }
+
+      &.is-active {
+        color: #fff;
+        background-color: #409eff;
+        border-color: #409eff;
+        font-weight: 500;
+      }
+
+      &.more {
+        border: none;
+        background: transparent;
+        color: #c0c4cc;
+
+        &:hover {
+          color: #409eff;
+          background: transparent;
+        }
+      }
+    }
+  }
+
+  .btn-prev,
+  .btn-next {
+    min-width: 32px;
+    height: 32px;
+    line-height: 30px;
+    border: 1px solid #dcdfe6;
+    border-radius: 6px;
+    margin: 0 4px;
+    color: #606266;
+    background-color: #fff;
+    transition: all 0.2s ease;
+    cursor: pointer;
+
+    &:hover {
+      color: #409eff;
+      border-color: #c6e2ff;
+      background-color: #ecf5ff;
+    }
+
+    &:disabled {
+      color: #c0c4cc;
+      background-color: #fff;
+      border-color: #e4e7ed;
+      cursor: not-allowed;
+
+      &:hover {
+        color: #c0c4cc;
+        background-color: #fff;
+        border-color: #e4e7ed;
+      }
+    }
+
+    .el-icon {
+      font-size: 12px;
+      font-weight: 500;
+    }
+  }
+
+  .el-pagination__total {
+    color: #909399;
+    font-size: 13px;
+    font-weight: 400;
+    margin-right: 16px;
+  }
+
+  // 移动端适配
+  @media (max-width: 640px) {
+    .el-pager li,
+    .btn-prev,
+    .btn-next {
+      min-width: 28px;
+      height: 28px;
+      line-height: 26px;
+      font-size: 12px;
+      margin: 0 2px;
+    }
+
+    .el-pagination__total {
+      font-size: 12px;
+      margin-right: 8px;
+    }
+  }
+}
+
+// 移动端分页容器
+.main-container.mobile {
+  .pagination-container {
+    padding: 1rem 0.5rem;
+    margin-top: 0.5rem;
+  }
+}
+
+// 通知卡片样式
+.notice-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 70;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.notice-card {
+  background: white;
+  max-width: 400px;
+  width: 90%;
+  padding: 24px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  position: relative;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  animation: slideInScale 0.15s ease-out;
+}
+
+@keyframes slideInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.notice-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+
   .el-icon {
-    font-size: 0.14rem;
-    font-weight: bold;
-    svg {
-      font-size: 0.14rem;
+    font-size: 20px;
+    color: #8e8e93;
+  }
+}
+
+.notice-header {
+  margin-bottom: 20px;
+
+  h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+    color: #1c1c1e;
+    line-height: 1.3;
+  }
+
+  .notice-date {
+    font-size: 14px;
+    color: #8e8e93;
+    margin: 0;
+    font-weight: 400;
+  }
+}
+
+.notice-content {
+  h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1c1c1e;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+  }
+
+  .body-text {
+    font-size: 16px;
+    line-height: 1.5;
+    color: #3c3c43;
+    margin: 0;
+
+    strong {
+      color: #1c1c1e;
+      font-weight: 600;
+    }
+  }
+}
+
+// 移动端适配
+@media (max-width: 640px) {
+  .notice-card {
+    max-width: none;
+    width: 95%;
+    margin: 20px;
+    padding: 20px;
+    border-radius: 16px;
+
+    .notice-close {
+      top: 12px;
+      right: 12px;
+      width: 28px;
+      height: 28px;
+
+      .el-icon {
+        font-size: 18px;
+      }
+    }
+
+    .notice-header {
+      margin-bottom: 16px;
+
+      h2 {
+        font-size: 20px;
+      }
+
+      .notice-date {
+        font-size: 13px;
+      }
+    }
+
+    .notice-content {
+      h3 {
+        font-size: 18px;
+      }
+
+      .body-text {
+        font-size: 15px;
+      }
     }
   }
 }
