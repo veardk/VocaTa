@@ -73,7 +73,14 @@
                 v-model="registerForm.hasRead"
                 label="我已阅读并同意用户协议和隐私政策"
               />
-              <div class="confirm-btn" @click="handleRegister">注册</div>
+              <div
+                class="confirm-btn"
+                @click="handleRegister"
+                v-loading.fullscreen.lock="fullscreenLoading"
+                element-loading-text="请稍后..."
+              >
+                注册
+              </div>
             </template>
           </el-form>
         </div>

@@ -10,8 +10,8 @@
     </div>
 
     <div class="main-part">
-      <el-form ref="form" :model="form" label-width="80px" class="form">
-        <el-upload
+      <el-form label-width="80px" class="form">
+        <!--el-upload
           class="avatar-uploader"
           :action="baseUrl + '/api/client/character/upload-avatar'"
           :headers="{ Authorization: 'Bearer ' + getToken() }"
@@ -22,18 +22,19 @@
           <img v-if="imageUrl" :src="imageUrl" class="avatar" />
           <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
         </el-upload>
+        -->
         <span class="form-label"> 昵称</span>
         <input placeholder="例如：张三" v-model="form.nickname" class="form-input" />
         <span class="form-label"> 性别</span>
         <el-radio-group v-model="form.gender">
-          <el-radio value="1">男</el-radio>
-          <el-radio value="0">女</el-radio>
+          <el-radio :value="1">男</el-radio>
+          <el-radio :value="0">女</el-radio>
         </el-radio-group>
         <span class="form-label"> 电话</span>
         <input placeholder="你的电话" v-model="form.phone" class="form-input" />
         <span class="form-label">生日</span>
         <input type="date" v-model="form.birthday" class="form-input" />
-        <div class="newBtn" type="primary">创建</div>
+        <div class="newBtn" type="primary" @click="update">修改</div>
       </el-form>
     </div>
   </div>
@@ -84,9 +85,23 @@ const getUserInfo = async () => {
   try {
     const res = await userApi.getUserInfo()
     if (res.code === 200) {
-      form.value = res.data
+      form.value.nickname = res.data.nickname
+      form.value.gender = res.data.gender
+      form.value.phone = res.data.phone
+      form.value.birthday = res.data.birthday
     }
   } catch (error) {
+    console.log(error)
+  }
+}
+const update = async () => {
+  try {
+    const res = await userApi.updateUserInfo(form.value)
+    if (res.code === 200) {
+      ElMessage.success('修改成功')
+    }
+  } catch (error) {
+    ElMessage.error('修改失败')
     console.log(error)
   }
 }
@@ -119,23 +134,26 @@ const getUserInfo = async () => {
   padding: 0.3rem;
   &.mobile {
     width: 95%;
+    max-height: 95%;
     position: fixed;
-    .top {
-      margin: 0.1rem 0;
-      .avatar {
-        margin-right: 0.1rem;
-      }
-    }
+    padding: 0.15rem;
     .main-part {
       padding: 0;
-      .flex {
-        margin: 0.1rem 0;
-      }
-      .label,
-      .value,
-      .tag {
-        font-size: 0.16rem;
-      }
+    }
+    .newBtn {
+      width: 50%;
+      padding: 0.1rem 0;
+    }
+    .form {
+      margin: 0.1rem;
+    }
+    .avatar {
+      width: 0.5rem;
+      height: 0.5rem;
+    }
+    :deep(.el-icon).avatar-uploader-icon {
+      width: 0.5rem;
+      height: 0.5rem;
     }
   }
 }

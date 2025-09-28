@@ -1,0 +1,22 @@
+export interface roleInfo {
+  "id"?: number,
+  "characterCode"?: string,
+  "name"?: string,
+  "description"?: string,
+  "greeting"?: string,
+  "avatarUrl"?: string,
+  "tags"?: string,
+  "language"?: string,
+  "status"?: number,
+  "statusName"?: string,
+  "isOfficial"?: number,
+  "isFeatured"?: number,
+  "isTrending"?: number,
+  "trendingScore"?: number,
+  "chatCount"?: number,
+  "userCount"?: number,
+  "isPrivate"?: boolean,
+  "creatorId"?: number,
+  "createdAt"?: string,
+  "updatedAt"?: string
+}

@@ -22,5 +22,9 @@ export const userApi = {
   // 获取用户信息
   getUserInfo(): Promise<Response<UserInfo>> {
     return request.get('/api/client/user/profile')
+  },
+  // 更新用户信息
+  updateUserInfo(params: UserInfo): Promise<Response<null>> {
+    return request.post('/api/client/user/profile', params)
   }
 }

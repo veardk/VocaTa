@@ -1,4 +1,4 @@
-# VocaTa管理后台 - 多阶段构建Dockerfile
+# VocaTa前端客户端 - 多阶段构建Dockerfile
 # 基于Node.js官方镜像
 
 # 构建阶段
@@ -91,23 +91,18 @@ http {
         application/xml+rss
         application/json;
 
-    # 管理后台服务器配置
+    # 服务器配置
     server {
         listen 8080;
         server_name localhost;
         root /usr/share/nginx/html;
         index index.html index.htm;
 
-        # 安全头 - 管理后台加强安全
-        add_header X-Frame-Options "DENY" always;
+        # 安全头
+        add_header X-Frame-Options "SAMEORIGIN" always;
         add_header X-XSS-Protection "1; mode=block" always;
         add_header X-Content-Type-Options "nosniff" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.vocata.com https://test-api.vocata.com;" always;
-
-        # 管理后台访问控制（可选）
-        # allow 192.168.1.0/24;
-        # deny all;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
 
         # SPA路由支持
         location / {
@@ -120,41 +115,20 @@ http {
             add_header Cache-Control "public, immutable";
         }
 
-        # 管理API代理
+        # API代理（如果需要）
         location /api {
             proxy_pass http://vocata-server:9009;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-
-            # 管理后台专用头部
-            proxy_set_header X-Admin-Request "true";
         }
 
         # 健康检查端点
         location /health {
             access_log off;
-            return 200 "admin-healthy\n";
+            return 200 "healthy\n";
             add_header Content-Type text/plain;
-        }
-
-        # 管理后台特殊路径保护
-        location /admin {
-            try_files $uri $uri/ /index.html;
-        }
-
-        # 禁止访问敏感文件
-        location ~ /\. {
-            deny all;
-            access_log off;
-            log_not_found off;
-        }
-
-        location ~ \.(env|config)$ {
-            deny all;
-            access_log off;
-            log_not_found off;
         }
     }
 }
@@ -179,9 +153,9 @@ ARG VERSION="1.0.0"
 LABEL maintainer="VocaTa Team <dev@vocata.com>" \
       version="${VERSION}" \
       build-date="${BUILD_DATE}" \
-      description="VocaTa AI角色扮演平台管理后台" \
-      org.opencontainers.image.title="vocata-admin" \
-      org.opencontainers.image.description="VocaTa AI Role Playing Platform Admin Dashboard" \
+      description="VocaTa AI角色扮演平台前端客户端" \
+      org.opencontainers.image.title="vocata-web" \
+      org.opencontainers.image.description="VocaTa AI Role Playing Platform Frontend Client" \
       org.opencontainers.image.url="https://github.com/leivik/vocata" \
       org.opencontainers.image.vendor="VocaTa Team" \
       org.opencontainers.image.version="${VERSION}" \

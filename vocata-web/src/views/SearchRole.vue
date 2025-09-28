@@ -64,15 +64,16 @@
     <!-- 角色列表配置 -->
     <div class="role-list-config">
       <h3>角色列表</h3>
-      <div>
+      <div v-if="!searchInput">
+        <span :class="my == true ? 'active-config' : ''" @click="my = true">我的</span>
         <span
-          :class="searchParam.orderDirection == 'desc' ? 'active-config' : ''"
-          @click="searchParam.orderDirection = 'desc'"
+          :class="searchParam.orderDirection == 'desc' && !my ? 'active-config' : ''"
+          @click="changeHot"
           >热门</span
         >
         <span
-          :class="searchParam.orderDirection == 'asc' ? 'active-config' : ''"
-          @click="searchParam.orderDirection = 'asc'"
+          :class="searchParam.orderDirection == 'asc' && !my ? 'active-config' : ''"
+          @click="changeNew"
           >最新</span
         >
       </div>
@@ -139,7 +140,8 @@ import { chatHistoryStore } from '@/store'
 import RoleDialog from './components/RoleDialog.vue'
 const isM = computed(() => isMobile())
 const router = useRouter()
-
+const my = ref(false)
+const myList = ref([])
 const roleSelected = ref<roleInfo>()
 const searchInput = ref('')
 const roleList: Ref<roleInfo[]> = ref([])
@@ -166,6 +168,14 @@ watch(
     deep: true,
   },
 )
+watch(my, () => {
+  if (my.value) {
+    roleList.value = myList.value
+    total.value = myList.value.length
+  } else {
+    getRoleList()
+  }
+})
 // 计算卡片样式的方法
 const getCardStyle = (index: number) => {
   // if (isM.value) return
@@ -192,6 +202,17 @@ const getCardStyle = (index: number) => {
     transform: `translate(-50%, ${transformY}) rotate(${angle}deg)`,
   }
 }
+// 切换热门
+const changeHot = () => {
+  searchParam.value.orderDirection = 'desc'
+  my.value = false
+}
+
+// 切换最新
+const changeNew = () => {
+  searchParam.value.orderDirection = 'asc'
+  my.value = false
+}
 
 // 获取角色列表
 const getRoleList = async () => {
@@ -210,9 +231,18 @@ const getSelectedRoleList = async () => {
   console.log('精选角色列表:', selectRoleList.value)
   loading1.value = false
 }
+// 获取我的角色列表
+const getMyList = async () => {
+  loading1.value = true
+  const res = await roleApi.getMyRoleList()
+  myList.value = res.data.list
+  console.log('我的角色列表:', selectRoleList.value)
+  loading1.value = false
+}
 const debouncedSearch = debounce(async () => {
   console.log('搜索:', searchInput.value)
   if (searchInput.value != '') {
+    my.value = false
     seachStatus.value = false
     const res = await roleApi.searchRole({ keyword: searchInput.value })
     console.log(searchInput.value)
@@ -232,7 +262,7 @@ const openRoleDialog = (item: roleInfo) => {
   infoShow.value = true
 }
 onMounted(() => {
-  Promise.all([getRoleList(), getSelectedRoleList()]).then(() => {})
+  Promise.all([getRoleList(), getSelectedRoleList(), getMyList()]).then(() => {})
 })
 
 // 开始对话
@@ -430,6 +460,8 @@ const startConversation = async (characterId: string | number) => {
     cursor: pointer;
     &:hover {
       background: rgba(255, 255, 255, 0.3);
+      background-size: 150% 150%;
+
       z-index: 5;
       transform: translate(-50%, -50%) scale(1.1) !important;
     }
@@ -446,7 +478,10 @@ const startConversation = async (characterId: string | number) => {
   margin-top: 0.2rem;
   align-items: center;
   border-top: 1px solid #ccc;
+  color: #333;
   .active-config {
+    color: #000;
+
     font-weight: bold;
   }
   span {
@@ -470,7 +505,7 @@ const startConversation = async (characterId: string | number) => {
     font-size: 0.3rem;
     background-size: 100% 100%;
     transform-style: preserve-3d;
-    transition: transform 0.8s;
+    transition: all 0.8s;
     border: 1px solid #ccc;
     cursor: pointer;
     border-radius: 0.1rem;
@@ -479,6 +514,7 @@ const startConversation = async (characterId: string | number) => {
 
     &:hover {
       transform: rotateY(180deg);
+      background-size: 150% 150%;
     }
   }
   .card-face {

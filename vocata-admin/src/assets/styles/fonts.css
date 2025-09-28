@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'CustomFont';
+  src: url('./SweiB2SansCJKsc-Bold.woff') format('woff');
+  src: url('./SweiB2SansCJKsc-Bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'CustomFont';
+  src: url('./SweiB2SansCJKsc-Regular.woff') format('woff');
+  src: url('./SweiB2SansCJKsc-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
