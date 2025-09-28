@@ -126,9 +126,9 @@
             <div class="user-avatar">
               <img :src="userInfo.avatar" alt="" />
             </div>
-            <div class="user-name">{{ userInfo.nickname }}</div>
+            <div v-if="!sidebarCollapsed" class="user-name">{{ userInfo.nickname }}</div>
           </div>
-          <div class="more">
+          <div v-if="!sidebarCollapsed" class="more">
             <el-icon>
               <MoreFilled />
             </el-icon>
@@ -342,15 +342,15 @@ const confirmEditTitle = async (conversationUuid: string) => {
 
 <style lang="scss" scoped>
 .sidebar {
-  width: 2.5rem;
-  background-color: #f9f9f9;
+  width: 3.5rem;
+  background-color: #fff;
   display: flex;
   flex-direction: column;
   align-items: center;
   transition: all 0.3s ease;
-  font-size: 0.16rem;
+  font-size: 0.26rem;
   overflow: hidden;
-  box-shadow: 0.02rem 0 0.1rem rgba(0, 0, 0, 0.07);
+  border-right: 1px solid #e5e5e5;
 
   &.mobile {
     width: 100%;
@@ -362,7 +362,7 @@ const confirmEditTitle = async (conversationUuid: string) => {
   }
 
   &.collapsed {
-    width: 0.8rem;
+    width: 1.2rem;
     .sidebar-header {
       justify-content: center;
     }
@@ -427,48 +427,87 @@ const confirmEditTitle = async (conversationUuid: string) => {
     .role-btn {
       display: flex;
       align-items: center;
-      border-radius: 0.1rem;
-      font-size: 0.2rem;
-      margin: 0.03rem 0 0;
-      padding: 0.1rem 0.2rem;
+      border-radius: 0.2rem;
+      font-size: 0.28rem !important;
+      margin: 0.05rem 0;
+      padding: 0.18rem 0.24rem;
       transition: all 0.2s;
       cursor: pointer;
-      color: #333;
+      color: #374151;
+      background-color: transparent;
 
       &:hover {
-        background-color: #f7f7f7;
-        // color: #fff;
+        background-color: #f3f4f6;
+        color: #111827;
       }
+
       .role-btn__icon {
-        // background: #000;
-        // color: #000;
-        font-weight: bold;
-        border-radius: 0.05rem;
-        width: 0.3rem;
-        height: 0.3rem;
+        font-weight: 500;
+        border-radius: 0.08rem;
+        width: 0.36rem;
+        height: 0.36rem;
         display: flex;
         align-items: center;
         justify-content: center;
       }
       .role-btn__text {
-        margin-left: 0.15rem;
+        margin-left: 0.16rem;
+        font-weight: 500;
+        font-size: 0.28rem !important;
       }
-    }
-    .active {
-      background-color: #eee;
-      // color: #fff;
-      font-weight: 500;
     }
   }
 
   // 搜索框
   .search-section {
-    width: 85%;
-    margin-bottom: 0.3rem;
+    width: 90%;
+    margin-bottom: 0.25rem;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 0.2rem;
+
+    :deep(.el-input) {
+      .el-input__wrapper {
+        border-radius: 0.18rem;
+        padding: 0.12rem 0.16rem;
+        font-size: 0.24rem;
+        box-shadow: none;
+        border: 1px solid #e5e7eb;
+        background-color: #f9fafb;
+        transition: all 0.2s ease;
+
+        &:hover {
+          border-color: #d1d5db;
+          background-color: #f3f4f6;
+        }
+
+        &.is-focus {
+          border-color: #3b82f6;
+          background-color: #fff;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .el-input__inner {
+          font-size: 0.24rem;
+          line-height: 1.5;
+          color: #374151;
+
+          &::placeholder {
+            color: #9ca3af;
+            font-size: 0.2rem;
+          }
+        }
+
+        .el-input__suffix {
+          .el-input__suffix-inner {
+            .el-icon {
+              color: #6b7280;
+              font-size: 0.18rem;
+            }
+          }
+        }
+      }
+    }
 
     .search-section__icon {
       cursor: pointer;
@@ -477,71 +516,139 @@ const confirmEditTitle = async (conversationUuid: string) => {
 
   // 历史对话列表
   .history-section {
-    width: 90%;
+    width: 95%;
     display: flex;
     flex-direction: column;
-    padding: 0.2rem 0;
-    border-top: 0.01rem solid #f0f0f0;
+    padding: 0.15rem 0;
+    border-top: 1px solid #e5e7eb;
     flex: 1;
-    overflow: auto;
-    font-size: 0.16rem;
+    overflow: hidden;
 
     h3 {
-      font-size: 0.2rem;
-      text-align: center;
-      margin: 0 0 0.1rem 0;
-      color: #333;
-      font-weight: 500;
+      font-size: 0.28rem !important;
+      text-align: left;
+      margin: 0 0 0.15rem 0.15rem;
+      color: #374151;
+      font-weight: 600;
     }
     .history-list {
       width: 100%;
       overflow-y: auto;
       flex: 1;
+      padding: 0 0.1rem;
+
+      &::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      &::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 2px;
+      }
+
+      &::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+      }
     }
 
     .history-item {
       display: flex;
       align-items: center;
-      padding: 0.1rem 0.15rem;
-      border-radius: 0.08rem;
-      margin-bottom: 0.05rem;
+      padding: 0.16rem 0.15rem;
+      border-radius: 0.16rem;
+      margin-bottom: 0.06rem;
       cursor: pointer;
       transition: all 0.2s;
-      color: #666;
+      color: #6b7280;
       position: relative;
+      font-size: 0.26rem !important;
 
       &:hover {
-        background-color: #f7f7f7;
+        background-color: #f3f4f6;
+        color: #374151;
+
         .history-item-actions {
           opacity: 1;
         }
       }
 
       &.active {
-        background-color: #eaeaea;
-        // color: #1890ff;
-        font-weight: bold;
+        background-color: #e5f3ff;
+        color: #0066cc;
+        font-weight: 500;
       }
 
-      .history-item-title {
-        flex: 1;
-        // width: 50%;
-        margin: 0 0.1rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        cursor: text;
+      .history-item-actions {
+        opacity: 0;
+        transition: opacity 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.08rem;
+        margin-left: auto;
+
+        .action-btn {
+          width: 0.28rem;
+          height: 0.28rem;
+          padding: 0.04rem;
+          border-radius: 50%;
+          transition: all 0.2s;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.16rem;
+          color: #6b7280;
+
+          &:hover {
+            background-color: #e5e7eb;
+            color: #374151;
+          }
+
+          &.rename-btn:hover {
+            background-color: #dbeafe;
+            color: #2563eb;
+          }
+
+          &.delete-btn:hover {
+            background-color: #fee2e2;
+            color: #dc2626;
+          }
+        }
       }
       .history-item-avatar {
-        width: 0.25rem;
-        height: 0.25rem;
+        width: 0.36rem;
+        height: 0.36rem;
         border-radius: 50%;
         overflow: hidden;
+        flex-shrink: 0;
+        margin-right: 0.06rem;
         img {
           width: 100%;
           height: 100%;
           object-fit: cover;
         }
+      }
+
+      .history-item-title {
+        flex: 1;
+        margin: 0 0.08rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: text;
+        font-size: 0.24rem !important;
+        line-height: 1.4;
+        font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: inherit;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
       .history-item-edit-input {
         flex: 1;
@@ -596,10 +703,10 @@ const confirmEditTitle = async (conversationUuid: string) => {
     }
 
     .empty-history {
-      color: #999;
+      color: #6b7280;
       text-align: center;
       padding: 0.2rem;
-      font-size: 0.14rem;
+      font-size: 0.22rem !important;
     }
   }
 
@@ -611,14 +718,19 @@ const confirmEditTitle = async (conversationUuid: string) => {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 0.2rem;
-      height: 0.4rem;
-      background: linear-gradient(to top, #fff, #fff3);
+      padding: 0.12rem 0.15rem;
+      height: auto;
+      min-height: 0.5rem;
+      background: #f9fafb;
       cursor: pointer;
-      border-radius: 0.1rem;
-      color: #000;
+      border-radius: 0.16rem;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      transition: all 0.2s ease;
+
       &:hover {
-        background: linear-gradient(to top, #eee9, #eee3);
+        background: #f3f4f6;
+        border-color: #d1d5db;
       }
     }
     .user-info {
@@ -626,51 +738,77 @@ const confirmEditTitle = async (conversationUuid: string) => {
       align-items: center;
       justify-content: center;
       .user-avatar {
-        width: 0.25rem;
-        height: 0.25rem;
+        width: 0.32rem;
+        height: 0.32rem;
         border-radius: 50%;
         overflow: hidden;
-        background-color: #ccc;
+        background-color: #e5e7eb;
+        flex-shrink: 0;
         img {
           width: 100%;
           height: 100%;
-          object-fit: contain;
+          object-fit: cover;
         }
       }
       .user-name {
-        margin-left: 0.15rem;
-        font-size: 0.2rem;
-        line-height: 0.16rem;
+        margin-left: 0.06rem;
+        font-size: 0.22rem;
+        line-height: 1.3;
+        color: #374151;
+        font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
     }
     .more {
-      font-size: 0.16rem;
-      text-align: center;
+      font-size: 0.18rem;
+      color: #6b7280;
+      transition: color 0.2s ease;
+
+      &:hover {
+        color: #374151;
+      }
     }
     .user-menu {
       position: absolute;
       left: 0;
       right: 0;
       bottom: 110%;
-      background-color: #fffd;
-      color: #000;
-      border: 0.03rem solid #f5f5f5;
-      border-radius: 0.1rem;
+      background-color: #fff;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.16rem;
       display: flex;
       flex-direction: column;
       align-items: center;
+      box-shadow: 0 0.1rem 0.3rem rgba(0, 0, 0, 0.15), 0 0.04rem 0.08rem rgba(0, 0, 0, 0.1);
       .user-menu-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0.1rem 0.2rem;
+        padding: 0.14rem 0.2rem;
         width: 100%;
-        height: 0.4rem;
-        font-size: 0.16rem;
+        height: auto;
+        min-height: 0.48rem;
+        font-size: 0.2rem;
         cursor: pointer;
         transition: all 0.2s;
+        border-radius: 0.12rem;
+        margin: 0.02rem 0;
+
         &:hover {
-          background-color: #f5f5f5;
+          background-color: #f3f4f6;
+        }
+
+        &:first-child {
+          margin-top: 0.08rem;
+        }
+
+        &:last-child {
+          margin-bottom: 0.08rem;
         }
       }
     }

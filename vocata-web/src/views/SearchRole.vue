@@ -283,7 +283,8 @@ const startConversation = async (characterId: string | number) => {
         font-size: 0.2rem;
       }
       .search {
-        width: 70%;
+        width: 60%;
+        max-width: 3rem;
         height: 0.3rem;
         padding: 0 0.1rem;
         input {
@@ -375,15 +376,28 @@ const startConversation = async (characterId: string | number) => {
   }
 
   .search {
-    width: 50%;
+    width: 40%;
+    max-width: 4rem;
     height: 0.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid #ccc;
-    border-radius: 0.1rem;
+    border: 1px solid #ddd;
+    border-radius: 0.25rem;
     overflow: hidden;
-    background-color: #f0f0f0;
+    background-color: #fff;
+    box-shadow: 0 0.02rem 0.08rem rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: #409eff;
+      box-shadow: 0 0.04rem 0.12rem rgba(64, 158, 255, 0.2);
+    }
+
+    &:focus-within {
+      border-color: #409eff;
+      box-shadow: 0 0 0 0.02rem rgba(64, 158, 255, 0.2);
+    }
     input {
       flex: 1;
       height: 95%;
