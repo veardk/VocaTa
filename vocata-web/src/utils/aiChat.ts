@@ -142,7 +142,7 @@ export class VocaTaWebSocketClient {
 
     this.ws.onclose = (event) => {
       console.log(`🔌 WebSocket连接关闭: code=${event.code}, reason="${event.reason}", wasClean=${event.wasClean}`)
-      this.emit('disconnected', event)
+      this.emit('disconnected', { event, manual: this.manualClose })
       const shouldReconnect = !this.manualClose
       this.ws = null
       if (shouldReconnect) {
@@ -616,6 +616,7 @@ export class VocaTaAIChat {
   private currentConversation: any = null
   private currentCharacter: any = null
   private conversationUuid: string | null = null
+  private connectingPromise: Promise<void> | null = null
 
   // 临时消息存储，用于流式显示
   private currentLLMResponse = ''
@@ -654,9 +655,24 @@ export class VocaTaAIChat {
   }
 
   private connectWebSocket(conversationUuid: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.wsClient = new VocaTaWebSocketClient(conversationUuid)
+    if (this.connectingPromise) {
+      return this.connectingPromise
+    }
+
+    this.connectingPromise = new Promise((resolve, reject) => {
       let connectionResolved = false // 防止重复resolve
+
+      const finalize = () => {
+        this.connectingPromise = null
+      }
+
+      try {
+        this.wsClient = new VocaTaWebSocketClient(conversationUuid)
+      } catch (creationError) {
+        finalize()
+        reject(creationError)
+        return
+      }
 
       // 设置事件监听器
       this.wsClient.on('connected', () => {
@@ -674,6 +690,7 @@ export class VocaTaAIChat {
           connectionResolved = true
           this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
           resolve()
+          finalize()
         }
 
         // 如果还没有连接确认，但收到了任何其他消息（AI回复等），也认为连接成功
@@ -682,6 +699,7 @@ export class VocaTaAIChat {
           connectionResolved = true
           this.onConnectionStatusCallback?.('connected', 'AI系统连接成功')
           resolve()
+          finalize()
         }
       })
 
@@ -695,12 +713,17 @@ export class VocaTaAIChat {
         if (!connectionResolved) {
           connectionResolved = true
           reject(error)
+          finalize()
         }
       })
 
-      this.wsClient.on('disconnected', () => {
-        console.log('📡 WebSocket连接断开，正在重连...')
-        this.onConnectionStatusCallback?.('disconnected', '连接已断开，正在重连...')
+      this.wsClient.on('disconnected', (payload: { event: CloseEvent, manual: boolean }) => {
+        if (!payload?.manual) {
+          console.log('📡 WebSocket连接断开，正在重连...')
+          this.onConnectionStatusCallback?.('disconnected', '连接已断开，正在重连...')
+        } else {
+          console.log('📡 WebSocket连接已手动关闭')
+        }
       })
 
       this.wsClient.on('reconnectFailed', () => {
@@ -717,9 +740,12 @@ export class VocaTaAIChat {
           console.error('❌ WebSocket连接超时')
           connectionResolved = true
           reject(new Error('WebSocket连接超时'))
+          finalize()
         }
       }, 10000)
     })
+
+    return this.connectingPromise
   }
 
   private handleWebSocketMessage(message: WebSocketMessage): void {
