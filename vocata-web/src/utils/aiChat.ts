@@ -238,7 +238,7 @@ export class VocaTaWebSocketClient {
   }
 }
 
-// 音频管理器类
+// 音频管理器类 - 批量录音模式
 export class AudioManager {
   private audioContext: AudioContext | null = null
   private mediaRecorder: MediaRecorder | null = null
@@ -247,19 +247,12 @@ export class AudioManager {
   private isRecording = false
   private audioStream: MediaStream | null = null
 
-  // VAD (语音活动检测) 相关属性 - 简化版本，解决乱发送问题
-  private analyser: AnalyserNode | null = null
-  private dataArray: Uint8Array | null = null
-  private vadThreshold = 40 // 简单音量阈值
-  private isVoiceActive = false
-  private consecutiveActiveFrames = 0
-  private consecutiveSilenceFrames = 0
-  private minActiveFrames = 2 // 连续2帧检测到语音才确认
-  private minSilenceFrames = 5 // 连续5帧静音才确认结束
-  // 音频缓冲队列
-  private audioBuffer: ArrayBuffer[] = []
-  private maxBufferSize = 5 // 最大缓冲5个音频块
+  // 批量录音模式 - 收集完整音频段
+  private recordedChunks: Blob[] = []
   private currentWsClient: VocaTaWebSocketClient | null = null
+  private stopRecordingPromise: Promise<void> | null = null
+  private stopRecordingResolve?: () => void
+  private stopRecordingReject?: (reason?: any) => void
 
   async initialize(): Promise<void> {
     try {
@@ -289,94 +282,17 @@ export class AudioManager {
 
   async startRecording(wsClient: VocaTaWebSocketClient): Promise<void> {
     try {
-      console.log('🎤 请求麦克风权限...')
+      console.log('🎤 开始批量录音模式...')
       this.currentWsClient = wsClient
+      this.recordedChunks = [] // 重置录音数据
+      this.stopRecordingPromise = null
+      this.stopRecordingResolve = undefined
+      this.stopRecordingReject = undefined
 
       // 确保AudioContext已初始化
       await this.ensureAudioContext()
 
-      // 检查浏览器支持情况和兼容性处理
-      console.log('🔍 初始浏览器检查:', {
-        mediaDevices: !!navigator.mediaDevices,
-        getUserMedia: !!navigator.getUserMedia,
-        webkitGetUserMedia: !!(navigator as any).webkitGetUserMedia,
-        mozGetUserMedia: !!(navigator as any).mozGetUserMedia,
-        userAgent: navigator.userAgent
-      })
-
-      // 创建完整的MediaDevices polyfill - 完全移除所有限制
-      if (!navigator.mediaDevices) {
-        console.warn('⚠️ 创建MediaDevices对象')
-        navigator.mediaDevices = {
-          getUserMedia: function(constraints: MediaStreamConstraints): Promise<MediaStream> {
-            // 尝试所有可能的getUserMedia API实现
-            const legacyGetUserMedia = (navigator as any).getUserMedia ||
-                                     (navigator as any).webkitGetUserMedia ||
-                                     (navigator as any).mozGetUserMedia ||
-                                     (navigator as any).msGetUserMedia
-
-            if (!legacyGetUserMedia) {
-              console.error('❌ 浏览器完全不支持getUserMedia API')
-              return Promise.reject(new Error('浏览器不支持麦克风功能'))
-            }
-
-            console.log('🔧 使用legacy getUserMedia API')
-            return new Promise((resolve, reject) => {
-              try {
-                legacyGetUserMedia.call(navigator, constraints, resolve, reject)
-              } catch (error) {
-                console.error('❌ Legacy getUserMedia调用失败:', error)
-                reject(new Error('无法访问麦克风设备'))
-              }
-            })
-          }
-        } as MediaDevices
-      }
-
-      // 如果MediaDevices存在但getUserMedia不存在，直接添加
-      if (!navigator.mediaDevices.getUserMedia) {
-        console.warn('⚠️ 添加getUserMedia方法到现有MediaDevices对象')
-
-        // 尝试所有可能的getUserMedia API实现
-        const legacyGetUserMedia = (navigator as any).getUserMedia ||
-                                 (navigator as any).webkitGetUserMedia ||
-                                 (navigator as any).mozGetUserMedia ||
-                                 (navigator as any).msGetUserMedia
-
-        if (!legacyGetUserMedia) {
-          console.error('❌ 无法找到任何getUserMedia实现')
-          throw new Error('浏览器不支持麦克风功能')
-        }
-
-        navigator.mediaDevices.getUserMedia = function(constraints: MediaStreamConstraints): Promise<MediaStream> {
-          console.log('🔧 调用polyfill getUserMedia')
-          return new Promise((resolve, reject) => {
-            try {
-              legacyGetUserMedia.call(navigator, constraints, resolve, reject)
-            } catch (error) {
-              console.error('❌ Polyfill getUserMedia调用失败:', error)
-              reject(new Error('无法访问麦克风设备'))
-            }
-          })
-        }
-      }
-
-      // 再次检查，不做安全限制
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error('❌ 无法创建音频API polyfill')
-        throw new Error('浏览器不支持音频功能')
-      }
-
-      // 直接尝试获取麦克风权限，完全移除所有安全检查
-      console.log('🔍 浏览器环境检查:', {
-        protocol: location.protocol,
-        hostname: location.hostname,
-        mediaDevices: !!navigator.mediaDevices,
-        getUserMedia: !!navigator.mediaDevices?.getUserMedia,
-        userAgent: navigator.userAgent.substring(0, 100)
-      })
-
-      console.info('✅ 已移除所有HTTPS和安全上下文限制，强制允许音频访问')
+      console.log('🎤 请求麦克风权限...')
 
       // 直接获取麦克风权限
       this.audioStream = await navigator.mediaDevices.getUserMedia({
@@ -389,139 +305,62 @@ export class AudioManager {
         }
       })
 
-      // 关键修复：严格验证音频流和音频轨道
+      // 验证音频流
       const tracks = this.audioStream.getTracks()
       const audioTracks = tracks.filter(track => track.kind === 'audio')
-      
+
       console.log('🔍 音频流详细信息:', {
         tracks: this.audioStream.getTracks().length,
         audioTracks: audioTracks.length,
-        active: this.audioStream.active,
-        trackDetails: tracks.map(track => ({
-          kind: track.kind,
-          enabled: track.enabled,
-          readyState: track.readyState,
-          label: track.label
-        }))
+        active: this.audioStream.active
       })
 
-      // 验证音频轨道存在且有效
-      if (audioTracks.length === 0) {
-        throw new Error('未能获取有效的音频轨道，请检查麦克风权限或设备连接')
+      if (audioTracks.length === 0 || !this.audioStream.active) {
+        throw new Error('未能获取有效的音频轨道')
       }
 
-      if (!this.audioStream.active) {
-        throw new Error('音频流未激活，请检查麦克风设备状态')
-      }
-
-      // 验证音频轨道状态
-      const activeAudioTracks = audioTracks.filter(track => track.readyState === 'live')
-      if (activeAudioTracks.length === 0) {
-        throw new Error('音频轨道未就绪，请重试或检查麦克风权限')
-      }
-
-      console.log('✅ 音频流验证通过:', {
-        audioTracks: activeAudioTracks.length,
-        firstTrackLabel: activeAudioTracks[0]?.label || 'unknown'
-      })
-
-      // 检查MediaRecorder支持
-      if (!window.MediaRecorder) {
-        console.warn('⚠️ MediaRecorder不支持，创建模拟对象')
-        ;(window as any).MediaRecorder = class MockMediaRecorder {
-          constructor(stream: any, options?: any) {
-            this.stream = stream
-            this.ondataavailable = null
-          }
-          start(timeslice?: number) {
-            console.log('模拟录音开始')
-            setTimeout(() => {
-              if (this.ondataavailable) {
-                this.ondataavailable({ data: new Blob() })
-              }
-            }, timeslice || 1000)
-          }
-          stop() { console.log('模拟录音停止') }
-          static isTypeSupported() { return true }
-        }
-      }
-
-      // 检查MediaRecorder支持的格式
+      // 选择最佳音频格式
       let mimeType = 'audio/webm;codecs=opus'
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm'
         if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'audio/ogg;codecs=opus'
+          mimeType = 'audio/wav'
           if (!MediaRecorder.isTypeSupported(mimeType)) {
-            mimeType = 'audio/wav'
+            mimeType = 'audio/mpeg'
             if (!MediaRecorder.isTypeSupported(mimeType)) {
-              // 最后的兜底方案
-              mimeType = 'audio/mpeg'
-              if (!MediaRecorder.isTypeSupported(mimeType)) {
-                console.warn('⚠️ 未找到完全支持的音频格式，使用默认设置')
-                mimeType = '' // 使用浏览器默认格式
-              }
+              mimeType = '' // 使用浏览器默认格式
             }
           }
         }
       }
 
-      console.log('🎵 使用音频格式:', mimeType)
+      console.log('🎵 使用音频格式:', mimeType || '默认格式')
 
-      // 创建MediaRecorder实例，使用兼容性更好的配置
+      // 创建MediaRecorder - 批量模式，不设置timeslice
       const mediaRecorderOptions: MediaRecorderOptions = {}
       if (mimeType) {
         mediaRecorderOptions.mimeType = mimeType
       }
-      // 只在支持的情况下设置音频比特率
-      try {
-        if (mimeType && MediaRecorder.isTypeSupported(mimeType)) {
-          mediaRecorderOptions.audioBitsPerSecond = 16000
-        }
-      } catch (e) {
-        console.warn('⚠️ 设置音频比特率失败，使用默认设置:', e)
-      }
 
-      // 创建MediaRecorder实例前进行最终验证
-      console.log('🔧 创建MediaRecorder，配置:', mediaRecorderOptions)
-      
-      try {
-        this.mediaRecorder = new MediaRecorder(this.audioStream, mediaRecorderOptions)
-        console.log('✅ MediaRecorder创建成功')
-      } catch (mediaRecorderError) {
-        console.error('❌ MediaRecorder创建失败:', mediaRecorderError)
-        // 尝试不带配置创建
-        try {
-          console.log('🔄 尝试使用默认配置创建MediaRecorder...')
-          this.mediaRecorder = new MediaRecorder(this.audioStream)
-          console.log('✅ 使用默认配置的MediaRecorder创建成功')
-        } catch (fallbackError) {
-          console.error('❌ 默认配置MediaRecorder也失败:', fallbackError)
-          throw new Error(`MediaRecorder创建失败：${fallbackError.message}`)
-        }
-      }
+      this.mediaRecorder = new MediaRecorder(this.audioStream, mediaRecorderOptions)
 
-      // 设置VAD音频分析
-      await this.setupVAD()
-
+      // 批量录音 - 收集所有数据到chunks数组
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          event.data.arrayBuffer().then(buffer => {
-            // 使用简化的音频活动检测
-            const hasValidSpeech = this.simpleAudioActivityCheck(buffer)
-
-            if (hasValidSpeech && this.currentWsClient) {
-              this.bufferAndSendAudio(buffer)
-            }
-          })
+          console.log(`🎤 收集音频块: ${event.data.size} bytes`)
+          this.recordedChunks.push(event.data)
         }
       }
 
-      this.mediaRecorder.start(500) // 每500ms记录一次数据，减少网络压力
-      this.isRecording = true
-      console.log('✅ 开始录音 (已启用严格的音频活动检测)')
+      // 录音结束时发送完整音频
+      this.mediaRecorder.onstop = () => {
+        this.handleMediaRecorderStop()
+      }
 
-      // 注意：不再使用复杂的VAD监控，直接在ondataavailable中进行检测
+      // 开始录音（不设置timeslice，收集完整音频）
+      this.mediaRecorder.start()
+      this.isRecording = true
+      console.log('✅ 开始批量录音 (手动控制模式)')
 
     } catch (error) {
       console.error('❌ 录音启动失败:', error)
@@ -529,24 +368,92 @@ export class AudioManager {
     }
   }
 
-  stopRecording(): void {
-    if (this.mediaRecorder && this.isRecording) {
-      this.mediaRecorder.stop()
-      if (this.audioStream) {
-        this.audioStream.getTracks().forEach(track => track.stop())
+  async stopRecording(): Promise<void> {
+    if (!this.mediaRecorder || !this.isRecording) {
+      return
+    }
+
+    if (!this.stopRecordingPromise) {
+      this.stopRecordingPromise = new Promise<void>((resolve, reject) => {
+        this.stopRecordingResolve = resolve
+        this.stopRecordingReject = reject
+
+        try {
+          this.mediaRecorder!.stop()
+          if (this.audioStream) {
+            this.audioStream.getTracks().forEach(track => track.stop())
+          }
+          this.isRecording = false
+
+          console.log('⏹️ 停止批量录音')
+          // 注意：不要在这里清理currentWsClient，因为processBatchAudio还需要使用它
+        } catch (error) {
+          console.error('❌ 停止录音失败:', error)
+          this.stopRecordingResolve = undefined
+          this.stopRecordingReject = undefined
+          this.stopRecordingPromise = null
+          reject(error)
+        }
+      })
+    }
+
+    try {
+      await this.stopRecordingPromise
+    } finally {
+      this.stopRecordingPromise = null
+      this.stopRecordingResolve = undefined
+      this.stopRecordingReject = undefined
+    }
+  }
+
+  // 处理批量录音音频数据
+  private async processBatchAudio(): Promise<void> {
+    try {
+      if (this.recordedChunks.length === 0) {
+        console.warn('⚠️ 没有录音数据')
+        return
       }
-      this.isRecording = false
 
-      // 重置VAD状态和缓冲区
-      this.isVoiceActive = false
-      this.consecutiveActiveFrames = 0
-      this.consecutiveSilenceFrames = 0
-      this.audioBuffer = []
+      console.log(`🎤 处理批量音频: ${this.recordedChunks.length} 个音频块`)
 
-      // 清理资源
+      // 合并所有音频块
+      const audioBlob = new Blob(this.recordedChunks, { type: this.recordedChunks[0].type })
+      const audioBuffer = await audioBlob.arrayBuffer()
+
+      console.log(`📦 批量音频数据: ${audioBuffer.byteLength} bytes, 格式: ${audioBlob.type}`)
+
+      // 发送完整音频到WebSocket
+      if (this.currentWsClient?.isConnected) {
+        this.currentWsClient.sendAudioData(audioBuffer)
+        console.log(`📤 已发送批量音频到服务器: ${audioBuffer.byteLength} bytes`)
+      } else {
+        console.error('❌ WebSocket未连接，无法发送音频数据')
+      }
+
+      // 清理录音数据
+      this.recordedChunks = []
+
+      // 完成后清理WebSocket客户端引用
       this.currentWsClient = null
 
-      console.log('⏹️ 停止录音，VAD状态已重置')
+    } catch (error) {
+      console.error('❌ 处理批量音频失败:', error)
+    }
+  }
+
+  private async handleMediaRecorderStop(): Promise<void> {
+    try {
+      await this.processBatchAudio()
+      this.stopRecordingResolve?.()
+    } catch (error) {
+      console.error('❌ 处理录音停止事件失败:', error)
+      this.stopRecordingReject?.(error)
+    } finally {
+      this.stopRecordingResolve = undefined
+      this.stopRecordingReject = undefined
+      this.stopRecordingPromise = null
+      this.mediaRecorder = null
+      this.audioStream = null
     }
   }
 
@@ -655,173 +562,6 @@ export class AudioManager {
 
   get playing(): boolean {
     return this.isPlaying
-  }
-
-  // VAD (语音活动检测) 相关方法
-  private async setupVAD(): Promise<void> {
-    try {
-      if (!this.audioContext || !this.audioStream) {
-        console.warn('⚠️ AudioContext或AudioStream未初始化，跳过VAD设置')
-        return
-      }
-
-      // 再次验证音频流中有有效的音频轨道
-      const audioTracks = this.audioStream.getTracks().filter(track => track.kind === 'audio')
-      if (audioTracks.length === 0) {
-        console.warn('⚠️ 音频流中没有音频轨道，跳过VAD设置')
-        return
-      }
-
-      // 检查音频轨道状态
-      const liveAudioTracks = audioTracks.filter(track => track.readyState === 'live')
-      if (liveAudioTracks.length === 0) {
-        console.warn('⚠️ 音频轨道未激活，跳过VAD设置')
-        return
-      }
-
-      console.log('🔧 开始初始化VAD，音频轨道状态:', {
-        totalTracks: this.audioStream.getTracks().length,
-        audioTracks: audioTracks.length,
-        liveTracks: liveAudioTracks.length
-      })
-
-      // 创建音频分析器
-      this.analyser = this.audioContext.createAnalyser()
-      this.analyser.fftSize = 1024
-      this.analyser.smoothingTimeConstant = 0.3
-
-      // 创建音频源 - 增强错误处理
-      console.log('🔧 创建MediaStreamSource...')
-      const source = this.audioContext.createMediaStreamSource(this.audioStream)
-      console.log('✅ MediaStreamSource创建成功')
-      
-      source.connect(this.analyser)
-      console.log('✅ 音频源已连接到分析器')
-
-      // 创建数据数组
-      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount)
-      console.log('✅ VAD数据数组已创建，长度:', this.dataArray.length)
-
-      console.log('✅ VAD语音活动检测已初始化')
-    } catch (error) {
-      console.error('❌ VAD初始化失败:', error)
-      console.error('❌ 错误详情:', {
-        errorName: error.name,
-        errorMessage: error.message,
-        audioContextState: this.audioContext?.state,
-        audioStreamActive: this.audioStream?.active,
-        audioStreamTracks: this.audioStream?.getTracks().length
-      })
-      console.warn('⚠️ 将继续录音，但不进行语音活动检测')
-      // 不抛出错误，让录音继续，只是没有VAD功能
-    }
-  }
-
-  /**
-   * 简化的音频活动检测 - 基于音量阈值和连续帧检测
-   */
-  private simpleAudioActivityCheck(audioBuffer: ArrayBuffer): boolean {
-    try {
-      const view = new Uint8Array(audioBuffer)
-
-      // 基础验证
-      if (view.length < 100) {
-        return false
-      }
-
-      // 计算平均音量
-      let sum = 0
-      for (let i = 0; i < view.length; i += 4) { // 降采样减少计算量
-        sum += Math.abs(view[i] - 128)
-      }
-      const avgVolume = sum / (view.length / 4)
-
-      // 简单阈值检测
-      const hasVoice = avgVolume > this.vadThreshold
-
-      if (hasVoice) {
-        this.consecutiveActiveFrames++
-        this.consecutiveSilenceFrames = 0
-      } else {
-        this.consecutiveActiveFrames = 0
-        this.consecutiveSilenceFrames++
-      }
-
-      // 语音开始检测
-      if (!this.isVoiceActive && this.consecutiveActiveFrames >= this.minActiveFrames) {
-        this.isVoiceActive = true
-        console.log('🎤 检测到语音开始')
-        return true
-      }
-
-      // 语音持续检测
-      if (this.isVoiceActive && hasVoice) {
-        return true
-      }
-
-      // 语音结束检测
-      if (this.isVoiceActive && this.consecutiveSilenceFrames >= this.minSilenceFrames) {
-        this.isVoiceActive = false
-        console.log('🔇 检测到语音结束')
-        return false
-      }
-
-      return false
-
-    } catch (error) {
-      console.warn('⚠️ 音频检测失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 智能音频缓冲和发送策略
-   */
-  private bufferAndSendAudio(audioBuffer: ArrayBuffer): void {
-    // 将音频添加到缓冲区
-    this.audioBuffer.push(audioBuffer)
-
-    // 如果缓冲区满了，移除最老的数据
-    if (this.audioBuffer.length > this.maxBufferSize) {
-      this.audioBuffer.shift()
-    }
-
-    // 语音开始时，立即发送当前缓冲区的所有数据
-    if (!this.isVoiceActive) {
-      console.log('🎤 语音开始，批量发送缓冲音频')
-      this.flushAudioBuffer()
-    } else {
-      // 语音持续期间，直接发送
-      console.log(`🎵 发送音频: ${audioBuffer.byteLength} bytes`)
-      this.currentWsClient?.sendAudioData(audioBuffer)
-    }
-  }
-
-  /**
-   * 发送缓冲区中的所有音频数据
-   */
-  private flushAudioBuffer(): void {
-    if (this.audioBuffer.length > 0 && this.currentWsClient) {
-      console.log(`📤 发送缓冲音频: ${this.audioBuffer.length} 个片段`)
-
-      this.audioBuffer.forEach((buffer, index) => {
-        // 按顺序发送，避免网络拥塞
-        setTimeout(() => {
-          this.currentWsClient?.sendAudioData(buffer)
-        }, index * 50) // 每个片段间隔50ms
-      })
-
-      this.audioBuffer = []
-    }
-  }
-
-  // VAD配置方法
-  configureVAD(threshold: number, minActive: number, minSilence: number): void {
-    this.vadThreshold = Math.max(20, Math.min(100, threshold))
-    this.minActiveFrames = Math.max(1, minActive)
-    this.minSilenceFrames = Math.max(2, minSilence)
-
-    console.log(`⚙️ VAD配置更新: 阈值=${this.vadThreshold}, 最小活跃帧=${this.minActiveFrames}, 最小静音帧=${this.minSilenceFrames}`)
   }
 }
 
@@ -1015,29 +755,48 @@ export class VocaTaAIChat {
     this.wsClient.sendTextMessage(text)
   }
 
-  async startAudioCall(): Promise<void> {
+  // 开始录音
+  async startRecording(): Promise<void> {
     try {
-      this.isAudioCallActive = true
-      console.log('📞 开始音频通话')
+      console.log('📞 开始批量录音')
 
       await this.audioManager.startRecording(this.wsClient!)
       this.wsClient?.startAudioRecording()
 
     } catch (error) {
-      console.error('❌ 无法启动音频通话:', error)
-      this.isAudioCallActive = false
+      console.error('❌ 无法启动录音:', error)
       throw error
     }
   }
 
-  stopAudioCall(): void {
-    console.log('📞 停止音频通话')
-    this.isAudioCallActive = false
+  // 停止录音
+  async stopRecording(): Promise<void> {
+    console.log('📞 停止录音并发送批量音频')
 
-    this.audioManager.stopRecording()
-    this.audioManager.clearQueue()
+    await this.audioManager.stopRecording()
     this.wsClient?.stopAudioRecording()
+  }
 
+  // 兼容旧的音频通话方法
+  async startAudioCall(): Promise<void> {
+    if (!this.wsClient || !this.wsClient.isConnected) {
+      throw new Error('WebSocket未连接，无法启动音频通话')
+    }
+
+    console.log('📞 音频通话已激活，等待用户点击开始说话')
+    this.isAudioCallActive = true
+
+    // 清空残留的播放队列，确保新的通话段落从空状态开始
+    this.audioManager.clearQueue()
+    this.onAudioPlayCallback?.(false)
+  }
+
+  async stopAudioCall(): Promise<void> {
+    if (this.recording) {
+      await this.stopRecording()
+    }
+    this.isAudioCallActive = false
+    this.audioManager.clearQueue()
     this.onAudioPlayCallback?.(false)
   }
 
@@ -1090,7 +849,7 @@ export class VocaTaAIChat {
   destroy(): void {
     console.log('🧹 清理AI对话系统资源')
 
-    this.stopAudioCall()
+    void this.stopAudioCall()
     this.wsClient?.disconnect()
     this.audioManager.clearQueue()
 

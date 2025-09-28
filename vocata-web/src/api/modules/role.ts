@@ -48,5 +48,12 @@ export const roleApi = {
       url: '/api/client/tts-voice/list',
       method: 'get'
     })
+  },
+  // 获取角色详情
+  getCharacterDetail(id: string | number) {
+    return request({
+      url: `/api/open/character/${id}`,
+      method: 'get'
+    })
   }
 }

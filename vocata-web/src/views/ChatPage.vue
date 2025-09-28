@@ -73,92 +73,35 @@
         </button>
       </div>
 
-      <!-- ChatGPT风格音频通话界面 -->
-      <div class="chatgpt-voice-chat" v-if="isAudioCallActive">
-        <!-- 顶部状态栏 -->
-        <div class="voice-header">
-          <div class="connection-indicator">
-            <div class="status-dot" :class="{ connected: isAIConnected }"></div>
-            <span class="status-text">{{ isAIConnected ? '已连接' : '连接中...' }}</span>
-          </div>
-          <button class="close-btn" @click="stopAudioCall">
+      <!-- 极简语音界面 -->
+      <div class="voice-minimal" v-if="isAudioCallActive">
+        <div class="voice-minimal__avatar" :class="{
+          'is-speaking': isAISpeaking,
+          'is-recording': aiChat?.recording
+        }">
+          <div class="voice-minimal__pulse"></div>
+          <img v-if="characterAvatar" :src="characterAvatar" :alt="getCharacterName()" />
+          <span v-else>{{ characterInitials }}</span>
+        </div>
+
+        <div class="voice-minimal__status">{{ voiceStatusText }}</div>
+
+        <div class="voice-minimal__controls">
+          <button
+            class="voice-minimal__control is-mic"
+            :class="{ 'is-recording': aiChat?.recording }"
+            @click="toggleMicrophone"
+            :disabled="!isAIConnected"
+          >
+            <el-icon><Microphone /></el-icon>
+          </button>
+          <button class="voice-minimal__control is-cancel" @click="stopAudioCall">
             <el-icon><Close /></el-icon>
           </button>
         </div>
 
-        <!-- 中央对话区域 -->
-        <div class="voice-conversation-area">
-          <!-- AI头像和状态 -->
-          <div class="ai-section">
-            <div class="ai-avatar-container">
-              <div class="ai-avatar" :class="{ speaking: aiChat?.playing, thinking: isAIThinking }">
-                <div class="avatar-inner"></div>
-                <div class="voice-waves" v-if="aiChat?.playing">
-                  <div class="wave" v-for="i in 3" :key="i" :style="{ animationDelay: i * 0.1 + 's' }"></div>
-                </div>
-              </div>
-              <div class="ai-name">{{ getCharacterName() }}</div>
-              <div class="ai-status">
-                <span v-if="isAIThinking">正在思考...</span>
-                <span v-else-if="aiChat?.playing">正在说话</span>
-                <span v-else>等待中</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 用户部分 -->
-          <div class="user-section">
-            <div class="user-avatar-container">
-              <div class="user-avatar" :class="{ listening: aiChat?.recording, voice_active: vadActive }">
-                <div class="avatar-inner"></div>
-                <!-- VAD可视化 -->
-                <div class="vad-indicator" v-if="vadActive">
-                  <div class="vad-ring"></div>
-                  <div class="vad-pulse"></div>
-                </div>
-                <!-- 麦克风状态 -->
-                <div class="mic-icon" v-if="aiChat?.recording">
-                  <el-icon><Microphone /></el-icon>
-                </div>
-              </div>
-              <div class="user-name">您</div>
-              <div class="user-status">
-                <span v-if="vadActive">检测到语音</span>
-                <span v-else-if="aiChat?.recording">点击说话</span>
-                <span v-else>麦克风已关闭</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- STT实时显示 -->
-        <div class="stt-live-display" v-if="currentSTTText">
-          <div class="stt-content">
-            <div class="stt-label">您正在说：</div>
-            <div class="stt-text">{{ currentSTTText }}</div>
-          </div>
-        </div>
-
-        <!-- 底部控制区域 -->
-        <div class="voice-controls">
-          <button
-            class="voice-btn mic-btn"
-            :class="{
-              active: aiChat?.recording,
-              voice_active: vadActive,
-              disabled: !isAIConnected
-            }"
-            @click="toggleMicrophone"
-            :disabled="!isAIConnected"
-          >
-            <div class="btn-icon">
-              <el-icon v-if="aiChat?.recording"><Microphone /></el-icon>
-              <el-icon v-else><MicrophoneSlash /></el-icon>
-            </div>
-            <div class="btn-text">
-              {{ aiChat?.recording ? (vadActive ? '语音活跃' : '点击说话') : '开启麦克风' }}
-            </div>
-          </button>
+        <div class="voice-minimal__hint">
+          提示：点击录音按钮即可说话，当说完话时再次点击即可结束录音，等待 AI 回答
         </div>
       </div>
     </div>
@@ -195,6 +138,7 @@ const isAIConnected = ref(false) // 新增：追踪连接状态
 const isAIThinking = ref(false)
 const currentSTTText = ref('')
 const currentStreamingMessage = ref<ChatMessage | null>(null)
+const isAISpeaking = ref(false)
 
 // VAD相关状态
 const vadActive = ref(false)
@@ -264,6 +208,7 @@ watch(
       currentSTTText.value = ''
       isAIThinking.value = false
       currentStreamingMessage.value = null
+      isAISpeaking.value = false
 
       try {
         // 重新加载（强制不使用缓存）
@@ -462,6 +407,24 @@ const getCharacterName = () => {
   return currentConversation.value?.characterName || 'AI助手'
 }
 
+const characterAvatar = computed(() => currentConversation.value?.characterAvatarUrl || '')
+
+const characterInitials = computed(() => {
+  const name = getCharacterName()
+  if (!name) return 'AI'
+  return name.slice(0, 2).toUpperCase()
+})
+
+const voiceStatusText = computed(() => {
+  if (!isAIConnected.value) return '语音通道连接中…'
+  if (aiChat.value?.recording) {
+    return vadActive.value ? '正在收音…' : '准备开始说话'
+  }
+  if (isAISpeaking.value) return 'AI 正在回答'
+  if (isAIThinking.value) return 'AI 正在思考…'
+  return '点击下方按钮开启语音对话'
+})
+
 // 初始化AI对话系统
 const initializeAIChat = async () => {
   console.log('🔥 开始初始化AI对话系统...')
@@ -611,6 +574,7 @@ const setupAIChatCallbacks = () => {
   // 音频播放状态回调 - 增强版本，支持同步播放
   aiChat.value.onAudioPlay((isPlaying) => {
     console.log('🔊 音频播放状态:', isPlaying)
+    isAISpeaking.value = isPlaying
 
     // 当音频开始播放时，触发对应消息的同步播放
     if (isPlaying && currentStreamingMessage.value) {
@@ -658,6 +622,7 @@ const stopAudioCall = () => {
     aiChat.value.stopAudioCall()
     isAudioCallActive.value = false
     currentSTTText.value = ''
+    isAISpeaking.value = false
 
     // 停止VAD监控
     stopVADMonitoring()
@@ -1814,6 +1779,175 @@ const formatTime = (dateString: string) => {
   }
   50% {
     transform: scale(1.05);
+  }
+}
+
+.voice-minimal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12vh 0 8vh;
+  background: linear-gradient(150deg, #fff5f7 0%, #ffeef3 100%);
+  color: #475569;
+  text-align: center;
+  z-index: 1000;
+
+  &__avatar {
+    position: relative;
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.65);
+    box-shadow: 0 20px 48px rgba(148, 163, 184, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+
+    .voice-minimal__pulse {
+      position: absolute;
+      inset: -28px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 70%);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    &.is-speaking .voice-minimal__pulse {
+      animation: voice-minimal-pulse 1.9s ease-out infinite;
+      opacity: 1;
+    }
+
+    &.is-recording {
+      animation: voice-minimal-record 1.4s ease-in-out infinite;
+    }
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+
+    span {
+      font-size: 32px;
+      font-weight: 600;
+      color: rgba(148, 163, 184, 0.6);
+    }
+  }
+
+  &__status {
+    margin-top: 4vh;
+    font-size: 16px;
+    font-weight: 500;
+  }
+
+  &__controls {
+    display: flex;
+    gap: 28px;
+  }
+
+  &__control {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #111827;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+    }
+
+    :deep(.el-icon) {
+      font-size: 32px;
+      color: currentColor;
+      display: flex;
+    }
+  }
+
+  &__control.is-mic.is-recording {
+    color: #dc2626;
+    background: rgba(255, 243, 241, 0.96);
+  }
+
+  &__control.is-cancel {
+    color: #ef4444;
+  }
+
+  &__hint {
+    font-size: 13px;
+    color: rgba(71, 85, 105, 0.75);
+    letter-spacing: 0.02em;
+    padding: 0 24px;
+  }
+}
+
+@keyframes voice-minimal-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes voice-minimal-record {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 24px 40px rgba(248, 113, 113, 0.25);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 24px 42px rgba(248, 113, 113, 0.35);
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .voice-minimal {
+    padding: 14vh 0 12vh;
+
+    &__avatar {
+      width: 140px;
+      height: 140px;
+    }
+
+    &__controls {
+      gap: 20px;
+    }
+
+    &__control {
+      width: 64px;
+      height: 64px;
+
+      :deep(.el-icon) {
+        font-size: 28px;
+      }
+    }
   }
 }
 </style>
