@@ -21,7 +21,8 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 3000,
-      host: true,
+      host: '0.0.0.0', // 允许外部访问
+      strictPort: true, // 端口被占用时不自动尝试下一个端口
       proxy: {
         // 代理所有 /api 开头的请求到后端服务器
         '/api': {

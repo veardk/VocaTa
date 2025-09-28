@@ -638,13 +638,13 @@ VITE_APP_ENV=development
 VITE_APP_DEBUG=true
 
 # .env.staging - 测试环境（使用GitHub Secrets）
-VITE_API_BASE_URL=https://${STAGING_HOST}
+VITE_API_BASE_URL=https://{{STAGING_HOST}}
 VITE_APP_TITLE=VocaTa测试环境
 VITE_APP_ENV=staging
 VITE_APP_DEBUG=false
 
 # .env.production - 生产环境（使用GitHub Secrets）
-VITE_API_BASE_URL=https://${PRODUCTION_HOST}
+VITE_API_BASE_URL=https://{{PRODUCTION_HOST}}
 VITE_APP_TITLE=VocaTa
 VITE_APP_ENV=production
 VITE_APP_DEBUG=false

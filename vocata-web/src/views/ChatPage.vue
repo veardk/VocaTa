@@ -673,12 +673,12 @@ const toggleMicrophone = async () => {
   try {
     if (aiChat.value.recording) {
       // 当前在录音，停止录音
-      aiChat.value.stopAudioCall()
-      await aiChat.value.startAudioCall() // 重新开始但不录音
+      console.log('🛑 停止录音')
+      aiChat.value.stopRecording()
     } else {
       // 当前没有录音，开始录音
-      aiChat.value.stopAudioCall()
-      await aiChat.value.startAudioCall()
+      console.log('🎤 开始录音')
+      aiChat.value.startRecording()
     }
   } catch (error) {
     console.error('❌ 切换麦克风状态失败:', error)
@@ -1321,57 +1321,64 @@ const formatTime = (dateString: string) => {
   100% { transform: scale(1.4); opacity: 0; }
 }
 
-// ChatGPT风格语音通话界面样式
+// ChatGPT风格语音通话界面样式 - 修复尺寸问题
 .chatgpt-voice-chat {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #2D2D2D 0%, #1A1A1A 100%);
   z-index: 9999;
   display: flex;
   flex-direction: column;
   color: white;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
 
   // 顶部状态栏
   .voice-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.2rem 0.3rem;
-    background: rgba(0, 0, 0, 0.1);
+    padding: 16px 24px;
+    background: rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    height: 60px;
+    flex-shrink: 0;
 
     .connection-indicator {
       display: flex;
       align-items: center;
-      gap: 0.1rem;
+      gap: 8px;
 
       .status-dot {
-        width: 0.08rem;
-        height: 0.08rem;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         background: #ff6b6b;
         transition: background-color 0.3s;
 
         &.connected {
-          background: #51cf66;
+          background: #10B981;
         }
       }
 
       .status-text {
-        font-size: 0.14rem;
+        font-size: 14px;
         opacity: 0.9;
+        font-weight: 500;
       }
     }
 
     .close-btn {
-      width: 0.4rem;
-      height: 0.4rem;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
       border: none;
       color: white;
       cursor: pointer;
@@ -1381,56 +1388,77 @@ const formatTime = (dateString: string) => {
       transition: all 0.3s;
 
       &:hover {
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.2);
+        transform: scale(1.1);
+      }
+
+      :deep(.el-icon) {
+        font-size: 16px;
       }
     }
   }
 
-  // 中央对话区域
+  // 中央对话区域 - 适配屏幕尺寸
   .voice-conversation-area {
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 3rem;
-    padding: 2rem;
+    padding: 20px;
+    position: relative;
+    min-height: 0; // 允许flex收缩
 
-    .ai-section, .user-section {
+    // AI部分 - 相对定位，适应屏幕
+    .ai-section {
+      position: absolute;
+      top: 10%;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
-    .ai-avatar-container, .user-avatar-container {
+    .ai-avatar-container {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.2rem;
+      gap: 12px;
     }
 
-    // AI头像样式
+    // AI头像样式 - 缩小尺寸适配屏幕
     .ai-avatar {
-      width: 3rem;
-      height: 3rem;
+      width: 100px;
+      height: 100px;
       border-radius: 50%;
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(45deg, #ff9a9e, #fecfef);
-      box-shadow: 0 0.2rem 0.8rem rgba(0, 0, 0, 0.3);
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
       transition: all 0.3s ease;
 
       .avatar-inner {
-        width: 2.6rem;
-        height: 2.6rem;
+        width: 80px;
+        height: 80px;
         border-radius: 50%;
-        background: linear-gradient(45deg, #667eea, #764ba2);
+        background: linear-gradient(135deg, #1F2937 0%, #374151 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        color: white;
+
+        &::before {
+          content: "🤖";
+          font-size: 32px;
+        }
       }
 
       &.speaking {
         animation: ai-speaking 2s infinite;
+        box-shadow: 0 8px 32px rgba(16, 185, 129, 0.6);
       }
 
       &.thinking {
@@ -1448,42 +1476,84 @@ const formatTime = (dateString: string) => {
           position: absolute;
           top: 50%;
           left: 50%;
-          width: 100%;
-          height: 100%;
-          border: 0.02rem solid rgba(255, 255, 255, 0.6);
+          width: 120%;
+          height: 120%;
+          border: 2px solid rgba(16, 185, 129, 0.4);
           border-radius: 50%;
           transform: translate(-50%, -50%);
           animation: voice-wave 1.5s infinite;
 
           &:nth-child(2) {
             animation-delay: 0.3s;
+            width: 140%;
+            height: 140%;
           }
 
           &:nth-child(3) {
             animation-delay: 0.6s;
+            width: 160%;
+            height: 160%;
           }
         }
       }
     }
 
-    // 用户头像样式
+    .ai-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    .ai-status {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+
+    // 用户部分 - 相对定位，适应屏幕
+    .user-section {
+      position: absolute;
+      bottom: 20%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .user-avatar-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    // 用户头像样式 - 缩小尺寸适配屏幕
     .user-avatar {
-      width: 2.5rem;
-      height: 2.5rem;
+      width: 80px;
+      height: 80px;
       border-radius: 50%;
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(45deg, #74b9ff, #0984e3);
-      box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.3);
+      background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
       transition: all 0.3s ease;
 
       .avatar-inner {
-        width: 2.1rem;
-        height: 2.1rem;
+        width: 64px;
+        height: 64px;
         border-radius: 50%;
-        background: linear-gradient(45deg, #81ecec, #00cec9);
+        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        color: white;
+
+        &::before {
+          content: "👨‍💻";
+          font-size: 24px;
+        }
       }
 
       &.listening {
@@ -1492,193 +1562,258 @@ const formatTime = (dateString: string) => {
 
       &.voice_active {
         animation: voice-active-pulse 0.8s infinite;
-        box-shadow: 0 0 0.5rem rgba(116, 185, 255, 0.8);
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
       }
 
       .vad-indicator {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        width: 120%;
+        height: 120%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
 
         .vad-ring {
           position: absolute;
-          top: -0.1rem;
-          left: -0.1rem;
-          right: -0.1rem;
-          bottom: -0.1rem;
-          border: 0.03rem solid #51cf66;
+          width: 100%;
+          height: 100%;
+          border: 2px solid rgba(59, 130, 246, 0.6);
           border-radius: 50%;
-          animation: vad-ring-pulse 1.2s infinite;
+          animation: vad-ring-pulse 1s infinite;
         }
 
         .vad-pulse {
           position: absolute;
-          top: -0.2rem;
-          left: -0.2rem;
-          right: -0.2rem;
-          bottom: -0.2rem;
-          background: rgba(81, 207, 102, 0.2);
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
           border-radius: 50%;
-          animation: vad-pulse-expand 1.5s infinite;
+          animation: vad-pulse-effect 1s infinite;
         }
       }
 
       .mic-icon {
         position: absolute;
-        bottom: -0.05rem;
-        right: -0.05rem;
-        width: 0.6rem;
-        height: 0.6rem;
-        background: #51cf66;
+        bottom: -4px;
+        right: -4px;
+        width: 24px;
+        height: 24px;
+        background: #10B981;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        border: 0.02rem solid white;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 
         :deep(.el-icon) {
-          font-size: 0.25rem;
+          font-size: 12px;
           color: white;
         }
       }
     }
 
-    // 名称和状态文字
-    .ai-name, .user-name {
-      font-size: 0.18rem;
+    .user-name {
+      font-size: 16px;
       font-weight: 600;
-      margin-top: 0.3rem;
+      margin-top: 8px;
     }
 
-    .ai-status, .user-status {
-      font-size: 0.14rem;
-      opacity: 0.8;
-      margin-top: 0.1rem;
+    .user-status {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-top: 4px;
     }
   }
 
-  // STT实时显示
+  // STT实时显示 - 适配屏幕尺寸
   .stt-live-display {
     position: absolute;
-    bottom: 2rem;
+    bottom: 35%;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(10px);
-    border-radius: 0.2rem;
-    padding: 0.3rem 0.4rem;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 12px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     max-width: 80%;
     text-align: center;
 
     .stt-content {
       .stt-label {
-        font-size: 0.12rem;
+        font-size: 10px;
         opacity: 0.7;
-        margin-bottom: 0.1rem;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
       .stt-text {
-        font-size: 0.16rem;
+        font-size: 14px;
         font-weight: 500;
+        line-height: 1.4;
       }
     }
   }
 
-  // 底部控制区域
+  // 底部控制区域 - 固定高度
   .voice-controls {
-    padding: 0.5rem;
+    padding: 20px;
     display: flex;
     justify-content: center;
+    background: rgba(0, 0, 0, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    height: 80px;
+    flex-shrink: 0;
 
     .voice-btn {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.15rem;
-      background: rgba(255, 255, 255, 0.15);
-      border: 0.02rem solid rgba(255, 255, 255, 0.3);
-      border-radius: 0.6rem;
-      padding: 0.3rem 0.6rem;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      padding: 12px 20px;
       color: white;
       cursor: pointer;
       transition: all 0.3s;
       backdrop-filter: blur(10px);
 
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
+      &:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
       }
 
       &.active {
-        background: rgba(81, 207, 102, 0.8);
-        border-color: #51cf66;
+        background: rgba(16, 185, 129, 0.3);
+        border-color: #10B981;
       }
 
       &.voice_active {
-        background: rgba(255, 193, 7, 0.8);
-        border-color: #ffc107;
-        animation: mic-active-pulse 1s infinite;
+        background: rgba(59, 130, 246, 0.3);
+        border-color: #3B82F6;
+        animation: voice-control-pulse 1s infinite;
       }
 
-      &:not(:disabled):hover {
-        background: rgba(255, 255, 255, 0.25);
-        transform: translateY(-0.02rem);
+      &.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+
+        &:hover {
+          transform: none;
+        }
       }
 
       .btn-icon {
         :deep(.el-icon) {
-          font-size: 0.4rem;
+          font-size: 20px;
         }
       }
 
       .btn-text {
-        font-size: 0.12rem;
+        font-size: 12px;
         font-weight: 500;
       }
     }
   }
 }
 
-// 动画定义
+// 动画定义 - ChatGPT风格
 @keyframes ai-speaking {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 8px 32px rgba(16, 185, 129, 0.6);
+  }
 }
 
 @keyframes ai-thinking {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(1.03); opacity: 1; }
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
 }
 
 @keyframes user-listening {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.02); }
+  0% {
+    transform: scale(1);
+    box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+  }
+  100% {
+    transform: scale(1.02);
+    box-shadow: 0 8px 32px rgba(59, 130, 246, 0.5);
+  }
 }
 
 @keyframes voice-active-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.8);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 32px rgba(59, 130, 246, 1);
+  }
 }
 
 @keyframes voice-wave {
-  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
-  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
 }
 
 @keyframes vad-ring-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.1); opacity: 0.7; }
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.7;
+  }
 }
 
-@keyframes vad-pulse-expand {
-  0% { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(1.3); opacity: 0; }
+@keyframes vad-pulse-effect {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes voice-control-pulse {
+  0%, 100% {
+    transform: scale(1) translateY(-2px);
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    transform: scale(1.05) translateY(-4px);
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.6);
+  }
 }
 
 @keyframes mic-active-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 </style>

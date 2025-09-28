@@ -89,20 +89,15 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
         String sessionId = session.getId();
         byte[] audioData = message.getPayload().array();
 
-        logger.debug("接收音频数据: {} bytes", audioData.length);
+        logger.info("🎵 接收音频数据: {} bytes", audioData.length);
 
-        // 从URI中提取对话UUID
-        String uri = session.getUri().toString();
-        String conversationUuid = extractConversationUuid(uri);
-
-        // 使用认证的用户ID，不信任URL参数
-        String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
-
-        if (conversationUuid != null && authenticatedUserId != null) {
-            // 实时处理音频数据 - 流式STT处理
-            processAudioStreamRealTime(session, conversationUuid, authenticatedUserId, audioData);
+        // 将音频数据发送到对应的音频流
+        Sinks.Many<byte[]> audioSink = audioSinks.get(sessionId);
+        if (audioSink != null) {
+            audioSink.tryEmitNext(audioData);
+            logger.info("🎵 音频数据已添加到流: {} bytes", audioData.length);
         } else {
-            sendErrorMessage(session, "无效的请求URI或身份验证失败");
+            logger.warn("未找到会话的音频流: {}", sessionId);
         }
     }
 
@@ -200,7 +195,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
     private void sendSttTestResult(WebSocketSession session, Map<String, Object> payload) {
         try {
             Map<String, Object> response = new HashMap<>();
-            response.put("type", "stt_test_result");
+            response.put("type", "stt_result");
             response.put("text", payload.getOrDefault("text", ""));
             response.put("isFinal", payload.getOrDefault("is_final", false));
             response.put("confidence", payload.getOrDefault("confidence", 0.0));
@@ -418,22 +413,56 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             String authenticatedUserId = (String) session.getAttributes().get("authenticatedUserId");
 
             if (conversationUuid != null && authenticatedUserId != null) {
-                logger.info("🎤【STT测试模式】处理语音消息结束，会话: {}, 用户: {}", conversationUuid, authenticatedUserId);
+                logger.info("🎤【STT处理】音频录制结束，开始STT转换 - 会话: {}, 用户: {}", conversationUuid, authenticatedUserId);
 
-                // ====== STT测试模式：仅控制台输出，跳过完整AI处理 ======
-                logger.info("🎤【STT测试模式】音频录制结束，跳过完整AI流程");
+                // 调用STT服务处理收集的音频数据
+                sttTestService.processAudioToText(conversationUuid, authenticatedUserId, audioSink.asFlux())
+                        .subscribe(
+                                response -> {
+                                    try {
+                                        String responseType = (String) response.get("type");
 
-                // 控制台输出
-                System.out.println("========================================");
-                System.out.println("🎤 音频录制结束（STT测试模式）");
-                System.out.println("🆔 会话UUID: " + conversationUuid);
-                System.out.println("👤 用户ID: " + authenticatedUserId);
-                System.out.println("⏰ 时间: " + java.time.LocalDateTime.now());
-                System.out.println("🎯 模式: 仅STT测试，跳过LLM+TTS");
-                System.out.println("========================================");
+                                        if ("stt_result".equals(responseType)) {
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, Object> payload = (Map<String, Object>) response.get("payload");
+                                            if (payload != null) {
+                                                String recognizedText = (String) payload.get("text");
+                                                Boolean isFinal = (Boolean) payload.get("is_final");
+                                                Double confidence = (Double) payload.get("confidence");
 
-                // 发送确认响应
-                sendStatusMessage(session, "STT测试模式：音频录制结束");
+                                                logger.info("🎤【STT结果】识别文本: '{}', 最终: {}, 置信度: {}",
+                                                           recognizedText, isFinal, confidence);
+
+                                                // 发送STT结果到前端
+                                                sendSttTestResult(session, payload);
+                                            }
+
+                                        } else if ("complete".equals(responseType)) {
+                                            logger.info("🎤【STT完成】音频转文字处理完成");
+                                            sendStatusMessage(session, "STT处理完成");
+
+                                        } else if ("error".equals(responseType)) {
+                                            String errorMessage = (String) response.get("error");
+                                            logger.error("🎤【STT错误】: {}", errorMessage);
+                                            sendErrorMessage(session, "STT处理失败: " + errorMessage);
+                                        }
+
+                                    } catch (IOException e) {
+                                        logger.error("【发送错误】发送STT响应失败", e);
+                                    }
+                                },
+                                error -> {
+                                    logger.error("🎤【STT失败】音频转文字失败: {}", error.getMessage(), error);
+                                    try {
+                                        sendErrorMessage(session, "STT处理失败: " + error.getMessage());
+                                    } catch (IOException e) {
+                                        logger.error("【发送错误】无法发送错误消息", e);
+                                    }
+                                },
+                                () -> {
+                                    logger.info("🎤【STT链路完成】音频转文字链路完成");
+                                }
+                        );
 
                 // ====== 完整AI模式代码（已注释，需要时取消注释） ======
                 /*

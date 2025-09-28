@@ -31,9 +31,6 @@ public class UuidTypeHandler extends BaseTypeHandler<UUID> {
             return null;
         }
 
-        // 添加调试日志
-        System.out.println("UuidTypeHandler - 列名: " + columnName + ", 对象类型: " + object.getClass().getName() + ", 值: " + object);
-
         if (object instanceof UUID) {
             return (UUID) object;
         }

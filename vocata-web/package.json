@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --mode development",
-    "dev:local": "vite --mode local",
+    "dev:local": "vite",
     "dev:test": "vite --mode test",
     "build": "vite build --mode production",
     "build:local": "vite build --mode local",

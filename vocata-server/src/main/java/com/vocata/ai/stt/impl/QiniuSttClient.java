@@ -203,6 +203,7 @@ public class QiniuSttClient implements SttClient {
 
     /**
      * 构建请求体 (根据七牛云语音识别API文档)
+     * 七牛云ASR API需要音频文件的URL，不是直接的base64数据
      */
     private Map<String, Object> buildRequestBody(byte[] audioData, SttClient.SttConfig config) {
         Map<String, Object> request = new HashMap<>();
@@ -218,13 +219,20 @@ public class QiniuSttClient implements SttClient {
         String format = mapAudioFormat(config.getAudioFormat());
         audio.put("format", format);
 
-        // 可以是URL或者base64编码的音频数据
+        // 七牛云ASR API要求提供音频文件的URL
+        // 由于我们有音频数据但没有URL，我们需要：
+        // 1. 将音频数据上传到七牛云存储
+        // 2. 获取可访问的URL
+        // 3. 使用该URL调用ASR API
+
+        // 暂时使用base64数据URL作为兼容方案
         String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        audio.put("data", base64Audio);
+        String dataUrl = "data:audio/" + format + ";base64," + base64Audio;
+        audio.put("url", dataUrl);
 
         request.put("audio", audio);
 
-        logger.debug("七牛云ASR请求体: model={}, format={}", model, format);
+        logger.debug("七牛云ASR请求体: model={}, format={}, 数据大小: {} bytes", model, format, audioData.length);
 
         return request;
     }

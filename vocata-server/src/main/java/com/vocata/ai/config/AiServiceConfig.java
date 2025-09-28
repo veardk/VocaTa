@@ -172,7 +172,21 @@ public class AiServiceConfig {
     private SttClient findSttClientByName(List<SttClient> clients, String name) {
         // 尝试通过provider名称查找
         for (SttClient c : clients) {
-            if (c.getProviderName().toLowerCase().contains(name.toLowerCase())) {
+            String providerName = c.getProviderName().toLowerCase();
+            String searchName = name.toLowerCase();
+
+            // 直接包含匹配
+            if (providerName.contains(searchName)) {
+                return c;
+            }
+
+            // 特殊匹配规则 - 科大讯飞
+            if ("xunfei".equals(searchName) && (providerName.contains("科大讯飞") || providerName.contains("xunfei"))) {
+                return c;
+            }
+
+            // 特殊匹配规则 - 七牛云
+            if ("qiniu".equals(searchName) && (providerName.contains("七牛") || providerName.contains("qiniu"))) {
                 return c;
             }
         }
