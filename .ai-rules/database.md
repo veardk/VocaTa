@@ -20,7 +20,7 @@ inclusion: always
 ### 3. 字段类型规范
 - 禁止使用ENUM类型，统一使用SMALLINT表示枚举值
 - 使用PostgreSQL标准数据类型
-- 时间字段使用TIMESTAMP WITH TIME ZONE
+- 时间字段使用TIMESTAMP
 - JSON数据使用JSONB类型
 
 ### 4. 命名规范

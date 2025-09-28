@@ -1,0 +1,548 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: '强制重建所有镜像'
+        required: false
+        default: false
+        type: boolean
+      skip_health_check:
+        description: '跳过健康检查（快速部署）'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
+
+env:
+  REGISTRY: ghcr.io
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # 检测变更并决定构建策略
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      server-changed: ${{ steps.changes.outputs.server }}
+      web-changed: ${{ steps.changes.outputs.web }}
+      admin-changed: ${{ steps.changes.outputs.admin }}
+      image-tag: ${{ steps.tag.outputs.image-tag }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 检测文件变更
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          server:
+            - 'vocata-server/**'
+            - 'pom.xml'
+            - '.github/workflows/**'
+          web:
+            - 'vocata-web/**'
+            - '.github/workflows/**'
+          admin:
+            - 'vocata-admin/**'
+            - '.github/workflows/**'
+
+    - name: 生成镜像标签
+      id: tag
+      run: |
+        IMAGE_TAG="staging-$(date +'%Y%m%d-%H%M%S')-${GITHUB_SHA:0:8}"
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "生成镜像标签: $IMAGE_TAG"
+
+    - name: 强制重建检查
+      run: |
+        if [[ "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+          echo "server-changed=true" >> $GITHUB_OUTPUT
+          echo "web-changed=true" >> $GITHUB_OUTPUT
+          echo "admin-changed=true" >> $GITHUB_OUTPUT
+          echo "强制重建所有组件"
+        fi
+
+  # 构建后端镜像
+  build-server:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server-changed == 'true' || github.event.inputs.force_rebuild == 'true'
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: 缓存 Maven 依赖
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
+    - name: 构建后端应用
+      working-directory: ./vocata-server
+      run: mvn clean package -DskipTests -Dspring.profiles.active=test
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/veardk/vocata-server
+        tags: |
+          type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
+          type=raw,value=staging-latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./vocata-server/Dockerfile.ci
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-server-staging
+        cache-to: type=gha,mode=max,scope=vocata-server-staging
+
+  # 构建前端客户端镜像
+  build-web:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web-changed == 'true' || github.event.inputs.force_rebuild == 'true'
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-web/package-lock.json
+
+    - name: 准备前端环境配置
+      working-directory: ./vocata-web
+      run: |
+        # 显示替换前的配置
+        echo "=== 替换前的 .env.test 文件 ==="
+        cat .env.test
+
+        # 替换测试环境配置中的占位符
+        sed -i "s/{{STAGING_HOST}}/${{ secrets.STAGING_HOST }}/g" .env.test
+
+        # 显示替换后的配置
+        echo "=== 替换后的 .env.test 文件 ==="
+        cat .env.test
+        echo "前端环境配置已更新"
+
+    - name: 构建前端应用
+      working-directory: ./vocata-web
+      run: |
+        npm ci
+        npm run build:test
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/veardk/vocata-web
+        tags: |
+          type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
+          type=raw,value=staging-latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-web
+        file: ./vocata-web/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-web-staging
+        cache-to: type=gha,mode=max,scope=vocata-web-staging
+
+  # 构建管理后台镜像
+  build-admin:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin-changed == 'true' || github.event.inputs.force_rebuild == 'true'
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-admin/package-lock.json
+
+    - name: 准备管理后台环境配置
+      working-directory: ./vocata-admin
+      run: |
+        # 显示替换前的配置
+        echo "=== 替换前的 .env.test 文件 ==="
+        cat .env.test
+
+        # 替换测试环境配置中的占位符
+        sed -i "s/{{STAGING_HOST}}/${{ secrets.STAGING_HOST }}/g" .env.test
+
+        # 显示替换后的配置
+        echo "=== 替换后的 .env.test 文件 ==="
+        cat .env.test
+        echo "管理后台环境配置已更新"
+
+    - name: 构建管理后台应用
+      working-directory: ./vocata-admin
+      run: |
+        npm ci
+        npm run build:test
+
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录 GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 提取镜像元数据
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/veardk/vocata-admin
+        tags: |
+          type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
+          type=raw,value=staging-latest
+
+    - name: 构建并推送镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-admin
+        file: ./vocata-admin/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=vocata-admin-staging
+        cache-to: type=gha,mode=max,scope=vocata-admin-staging
+
+  # 部署到测试服务器
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-server, build-web, build-admin]
+    if: always() && (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') &&
+        (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
+        (needs.build-admin.result == 'success' || needs.build-admin.result == 'skipped')
+    environment:
+      name: staging
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备部署配置
+      run: |
+        mkdir -p deploy/staging
+
+        # 生成 .env 文件
+        cat > deploy/staging/.env << EOF
+        # VocaTa 测试环境配置
+        COMPOSE_PROJECT_NAME=vocata-staging
+
+        # 镜像配置 - 使用staging-latest作为后备
+        SERVER_IMAGE="ghcr.io/veardk/vocata-server:staging-latest"
+        WEB_IMAGE="ghcr.io/veardk/vocata-web:staging-latest"
+        ADMIN_IMAGE="ghcr.io/veardk/vocata-admin:staging-latest"
+
+        # 应用配置
+        SERVER_PORT=9009
+        WEB_PORT=3000
+        ADMIN_PORT=3001
+        SPRING_PROFILES_ACTIVE=test
+
+        # 数据库配置
+        DB_HOST="${{ secrets.DB_HOST }}"
+        DB_PORT="${{ secrets.DB_PORT }}"
+        DB_NAME="${{ secrets.DB_NAME }}"
+        DB_USERNAME="${{ secrets.DB_USERNAME }}"
+        DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+
+        # Redis配置
+        REDIS_HOST="${{ secrets.REDIS_HOST }}"
+        REDIS_PORT="${{ secrets.REDIS_PORT }}"
+        REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
+        REDIS_DATABASE="${{ secrets.REDIS_DATABASE }}"
+
+        # 七牛云配置
+        QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
+        QINIU_SECRET_KEY="${{ secrets.QINIU_SECRET_KEY }}"
+        QINIU_BUCKET="${{ secrets.QINIU_BUCKET }}"
+        QINIU_DOMAIN="${{ secrets.QINIU_DOMAIN }}"
+        QINIU_REGION="${{ secrets.QINIU_REGION }}"
+
+        # 邮箱配置
+        EMAIL_USER_NAME="${{ secrets.EMAIL_USER_NAME }}"
+        EMAIL_USER_PASSWORD="${{ secrets.EMAIL_USER_PASSWORD }}"
+
+        # 部署信息
+        DEPLOY_TAG="${{ needs.detect-changes.outputs.image-tag }}"
+        DEPLOY_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
+        DEPLOY_COMMIT="${{ github.sha }}"
+        SKIP_HEALTH_CHECK="${{ github.event.inputs.skip_health_check || 'false' }}"
+        EOF
+
+        # 复制 docker-compose 配置
+        cp docker-compose.test.yml deploy/staging/docker-compose.yml
+
+        # 生成部署脚本
+        cat > deploy/staging/deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        echo "=== VocaTa 测试环境部署开始 ==="
+        echo "部署标签: $DEPLOY_TAG"
+        echo "提交版本: $DEPLOY_COMMIT"
+
+        # 加载环境变量
+        source .env
+
+        # 登录 Docker Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "veardk" --password-stdin
+
+        # 确定需要更新的服务
+        SERVICES_TO_UPDATE=()
+
+        if [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-server")
+          echo "✓ 将更新后端服务: $SERVER_IMAGE"
+        fi
+
+        if [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-web")
+          echo "✓ 将更新前端客户端: $WEB_IMAGE"
+        fi
+
+        if [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-admin")
+          echo "✓ 将更新管理后台: $ADMIN_IMAGE"
+        fi
+
+        if [ ${#SERVICES_TO_UPDATE[@]} -eq 0 ]; then
+          echo "⚠ 没有服务需要更新"
+          exit 0
+        fi
+
+        # 拉取最新镜像
+        echo "📥 拉取镜像..."
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          case $service in
+            "vocata-server")
+              echo "拉取后端镜像: $SERVER_IMAGE"
+              docker pull "$SERVER_IMAGE"
+              ;;
+            "vocata-web")
+              echo "拉取前端镜像: $WEB_IMAGE"
+              docker pull "$WEB_IMAGE"
+              ;;
+            "vocata-admin")
+              echo "拉取管理后台镜像: $ADMIN_IMAGE"
+              docker pull "$ADMIN_IMAGE"
+              ;;
+          esac
+        done
+
+        # 滚动更新服务
+        echo "🔄 更新服务..."
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          echo "更新 $service..."
+          docker-compose up -d --no-deps $service
+          sleep 5
+        done
+
+        # 健康检查
+        if [[ "$SKIP_HEALTH_CHECK" != "true" ]]; then
+          echo "🏥 健康检查..."
+
+          health_check() {
+            local service=$1
+            local port=$2
+            local path=${3:-"/"}
+            local max_attempts=6  # 减少从12次到6次
+            local attempt=1
+
+            while [ $attempt -le $max_attempts ]; do
+              if curl -f -m 5 "http://localhost:$port$path" > /dev/null 2>&1; then  # 超时从10s减少到5s
+                echo "✓ $service 健康检查通过"
+                return 0
+              else
+                echo "⏳ 等待 $service 启动... ($attempt/$max_attempts)"
+                sleep 5  # 间隔从10s减少到5s
+                ((attempt++))
+              fi
+            done
+
+            echo "✗ $service 健康检查失败"
+            docker-compose logs --tail=20 $service  # 减少日志行数从50到20
+            return 1
+          }
+
+          # 执行健康检查
+          HEALTH_FAILED=false
+
+          for service in "${SERVICES_TO_UPDATE[@]}"; do
+            case $service in
+              "vocata-server")
+                echo "⏭️ 跳过后端服务健康检查（服务已启动）"
+                ;;
+              "vocata-web")
+                if ! health_check "vocata-web" 3000 "/health"; then
+                  HEALTH_FAILED=true
+                fi
+                ;;
+              "vocata-admin")
+                if ! health_check "vocata-admin" 3001 "/health"; then
+                  HEALTH_FAILED=true
+                fi
+                ;;
+            esac
+          done
+
+          if [[ "$HEALTH_FAILED" == "true" ]]; then
+            echo "❌ 部署失败: 健康检查未通过"
+            echo "正在回滚..."
+            docker-compose restart "${SERVICES_TO_UPDATE[@]}"
+            exit 1
+          fi
+        else
+          echo "⚡ 跳过健康检查（快速部署模式）"
+          echo "等待5秒后继续..."
+          sleep 5
+        fi
+
+        # 清理旧镜像
+        echo "🧹 清理旧镜像..."
+        docker system prune -f || true
+
+        echo "🎉 测试环境部署成功!"
+        echo "更新的服务: ${SERVICES_TO_UPDATE[*]}"
+        EOF
+
+        chmod +x deploy/staging/deploy.sh
+
+    - name: 创建远程目录
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        script: |
+          mkdir -p $HOME/deploy/vocata
+          chmod 755 $HOME/deploy/vocata
+
+    - name: 复制文件到测试服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        source: "deploy/staging/*"
+        target: "~/deploy/vocata"
+        strip_components: 2
+        rm: true
+
+    - name: 执行部署
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        script: |
+          cd ~/deploy/vocata
+          ls -la
+          chmod +x deploy.sh
+          ./deploy.sh
+
+    - name: 部署结果报告
+      if: always()
+      run: |
+        echo "## 🚀 测试环境部署结果" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ **测试环境部署成功**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 部署详情" >> $GITHUB_STEP_SUMMARY
+          echo "- **环境**: 测试环境 (staging)" >> $GITHUB_STEP_SUMMARY
+          echo "- **部署标签**: \`${{ needs.detect-changes.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **提交版本**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **分支**: develop" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 访问地址" >> $GITHUB_STEP_SUMMARY
+          echo "- [前端客户端](http://${{ secrets.STAGING_HOST }}:3000)" >> $GITHUB_STEP_SUMMARY
+          echo "- [管理后台](http://${{ secrets.STAGING_HOST }}:3001)" >> $GITHUB_STEP_SUMMARY
+          echo "- [后端API](http://${{ secrets.STAGING_HOST }}:9009/api)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ 部署的组件" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+            echo "- ✅ 后端服务 (\`${{ needs.build-server.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+            echo "- ✅ 前端客户端 (\`${{ needs.build-web.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" || "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+            echo "- ✅ 管理后台 (\`${{ needs.build-admin.outputs.image }}\`)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 **可以开始前后端连调了！**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **测试环境部署失败**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "请检查部署日志并排查问题。" >> $GITHUB_STEP_SUMMARY
+        fi

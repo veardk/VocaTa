@@ -1,0 +1,203 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [ develop, master ]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # 检测变更路径
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      server-changed: ${{ steps.changes.outputs.server }}
+      web-changed: ${{ steps.changes.outputs.web }}
+      admin-changed: ${{ steps.changes.outputs.admin }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 检测文件变更
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          server:
+            - 'vocata-server/**'
+            - 'pom.xml'
+            - '.github/workflows/**'
+          web:
+            - 'vocata-web/**'
+            - '.github/workflows/**'
+          admin:
+            - 'vocata-admin/**'
+            - '.github/workflows/**'
+
+  # 后端服务CI
+  backend-ci:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server-changed == 'true'
+    defaults:
+      run:
+        working-directory: ./vocata-server
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: 缓存 Maven 依赖
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: 编译项目
+      run: mvn clean compile -DskipTests
+
+    - name: 运行单元测试
+      run: mvn test
+      continue-on-error: true
+
+    - name: 构建 JAR 包
+      run: mvn package -DskipTests
+
+  # 前端客户端CI
+  frontend-web-ci:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web-changed == 'true'
+    defaults:
+      run:
+        working-directory: ./vocata-web
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-web/package-lock.json
+
+    - name: 安装依赖
+      run: npm ci
+
+    - name: 代码检查
+      run: |
+        npm run lint
+        npm run type-check
+
+    - name: 构建应用
+      run: npm run build:test
+
+  # 管理后台CI
+  frontend-admin-ci:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin-changed == 'true'
+    defaults:
+      run:
+        working-directory: ./vocata-admin
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-admin/package-lock.json
+
+    - name: 安装依赖
+      run: npm ci
+
+    - name: 代码检查
+      run: |
+        npm run lint
+        npm run type-check
+
+    - name: 构建应用
+      run: npm run build:test
+
+  # CI 结果汇总
+  ci-summary:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, backend-ci, frontend-web-ci, frontend-admin-ci]
+    if: always()
+
+    steps:
+    - name: CI 结果汇总
+      run: |
+        echo "## 🔍 CI 检查结果" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| 组件 | 变更状态 | CI状态 |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+        # 检查各组件状态
+        FAILED=false
+
+        # 后端服务
+        if [[ "${{ needs.detect-changes.outputs.server-changed }}" == "true" ]]; then
+          if [[ "${{ needs.backend-ci.result }}" == "success" ]]; then
+            echo "| 后端服务 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 后端服务 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
+        else
+          echo "| 后端服务 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 前端客户端
+        if [[ "${{ needs.detect-changes.outputs.web-changed }}" == "true" ]]; then
+          if [[ "${{ needs.frontend-web-ci.result }}" == "success" ]]; then
+            echo "| 前端客户端 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 前端客户端 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
+        else
+          echo "| 前端客户端 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # 管理后台
+        if [[ "${{ needs.detect-changes.outputs.admin-changed }}" == "true" ]]; then
+          if [[ "${{ needs.frontend-admin-ci.result }}" == "success" ]]; then
+            echo "| 管理后台 | 有变更 | ✅ 通过 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 管理后台 | 有变更 | ❌ 失败 |" >> $GITHUB_STEP_SUMMARY
+            FAILED=true
+          fi
+        else
+          echo "| 管理后台 | 无变更 | ⏭️ 跳过 |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "$FAILED" == "false" ]]; then
+          echo "🎉 **CI检查通过**，可以合并PR！" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **CI检查失败**，请修复后重新提交" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi

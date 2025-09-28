@@ -611,18 +611,266 @@ export default defineConfig(({ mode }) => {
 })
 ```
 
-### 环境配置
-```bash
-# .env.development
-VITE_API_BASE_URL=http://localhost:9010
-VITE_APP_TITLE=VocaTa开发环境
+### 环境配置与安全策略
 
-# .env.production
-VITE_API_BASE_URL=https://api.vocata.com
-VITE_APP_TITLE=VocaTa
+#### 环境变量文件结构
+```
+vocata-web/
+├── .env.example               # 环境变量模板（提交到git）
+├── .env.development          # 本地开发环境（不提交到git）
+├── .env.staging              # 测试环境（不提交到git）
+├── .env.production           # 生产环境（不提交到git）
+└── .gitignore                # 忽略敏感环境文件
 ```
 
-### ESLint和Prettier配置
+#### 安全的环境变量配置
+```bash
+# .env.example - 环境变量模板
+VITE_API_BASE_URL=http://localhost:9009
+VITE_APP_TITLE=VocaTa
+VITE_APP_ENV=development
+VITE_APP_DEBUG=true
+
+# .env.development - 本地开发环境
+VITE_API_BASE_URL=http://localhost:9009
+VITE_APP_TITLE=VocaTa开发环境
+VITE_APP_ENV=development
+VITE_APP_DEBUG=true
+
+# .env.staging - 测试环境（使用GitHub Secrets）
+VITE_API_BASE_URL=https://{{STAGING_HOST}}
+VITE_APP_TITLE=VocaTa测试环境
+VITE_APP_ENV=staging
+VITE_APP_DEBUG=false
+
+# .env.production - 生产环境（使用GitHub Secrets）
+VITE_API_BASE_URL=https://{{PRODUCTION_HOST}}
+VITE_APP_TITLE=VocaTa
+VITE_APP_ENV=production
+VITE_APP_DEBUG=false
+```
+
+#### .gitignore 配置
+```bash
+# 环境配置文件 - 保护敏感信息
+.env.local
+.env.development
+.env.staging
+.env.test
+.env.production
+.env
+
+# 但保留模板文件
+!.env.example
+```
+
+#### TypeScript 环境配置支持
+```typescript
+// src/config/env.ts
+interface EnvConfig {
+  apiBaseUrl: string
+  appTitle: string
+  appEnv: string
+  debug: boolean
+}
+
+const config: EnvConfig = {
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:9009',
+  appTitle: import.meta.env.VITE_APP_TITLE || 'VocaTa',
+  appEnv: import.meta.env.VITE_APP_ENV || 'development',
+  debug: import.meta.env.VITE_APP_DEBUG === 'true'
+}
+
+export default config
+```
+
+#### API 请求配置使用
+```typescript
+// api/request.js 使用配置
+import config from '@/config/env'
+
+const api = axios.create({
+  baseURL: config.apiBaseUrl,
+  timeout: 10000
+})
+```
+
+### GitHub Actions CI/CD 配置
+
+#### 客户端前端部署 (.github/workflows/deploy-web.yml)
+```yaml
+name: Deploy Web Frontend
+
+on:
+  push:
+    branches: [master, develop]
+    paths: ['vocata-web/**']
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: vocata-web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd vocata-web
+          npm ci
+
+      - name: Build for staging
+        env:
+          VITE_API_BASE_URL: https://${{ secrets.STAGING_HOST }}
+          VITE_APP_TITLE: VocaTa测试环境
+          VITE_APP_ENV: staging
+          VITE_APP_DEBUG: false
+        run: |
+          cd vocata-web
+          echo "Building with API URL: $VITE_API_BASE_URL"  # 验证注入成功
+          npm run build
+
+      - name: Deploy to staging
+        # 部署到测试服务器的步骤
+
+  deploy-production:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: vocata-web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd vocata-web
+          npm ci
+
+      - name: Build for production
+        env:
+          VITE_API_BASE_URL: https://${{ secrets.PRODUCTION_HOST }}
+          VITE_APP_TITLE: VocaTa
+          VITE_APP_ENV: production
+          VITE_APP_DEBUG: false
+        run: |
+          cd vocata-web
+          echo "Building with API URL: $VITE_API_BASE_URL"  # 验证注入成功
+          npm run build
+
+      - name: Deploy to production
+        # 部署到生产服务器的步骤
+```
+
+#### 管理后台部署 (.github/workflows/deploy-admin.yml)
+```yaml
+name: Deploy Admin Frontend
+
+on:
+  push:
+    branches: [master, develop]
+    paths: ['vocata-admin/**']
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: vocata-admin/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd vocata-admin
+          npm ci
+
+      - name: Build for staging
+        env:
+          VITE_API_BASE_URL: https://${{ secrets.STAGING_HOST }}
+          VITE_APP_TITLE: VocaTa管理后台测试环境
+          VITE_APP_ENV: staging
+        run: |
+          cd vocata-admin
+          npm run build:staging
+
+  deploy-production:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: vocata-admin/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd vocata-admin
+          npm ci
+
+      - name: Build for production
+        env:
+          VITE_API_BASE_URL: https://${{ secrets.PRODUCTION_HOST }}
+          VITE_APP_TITLE: VocaTa管理后台
+          VITE_APP_ENV: production
+        run: |
+          cd vocata-admin
+          npm run build
+```
+
+#### 前端构建脚本配置
+```json
+// package.json 构建脚本
+{
+  "scripts": {
+    "dev": "vite --mode development",
+    "build": "vite build --mode production",
+    "build:staging": "vite build --mode staging",
+    "build:test": "vite build --mode staging",
+    "preview": "vite preview"
+  }
+}
+```
+
+#### 本地开发环境搭建流程
+```bash
+# 1. 首次设置
+cp .env.example .env.development
+
+# 2. 编辑本地配置
+vim .env.development
+
+# 3. 启动开发
+npm run dev  # 自动使用 .env.development
+
+# 4. 构建测试
+npm run build:staging  # 使用 .env.staging 配置
+```
+
+#### 环境变量安全优势
+1. **敏感信息保护**: 真实服务器地址只存在于GitHub Secrets中
+2. **环境隔离**: 不同环境使用不同的配置
+3. **版本控制安全**: .env文件不提交到git，避免泄露
+4. **CI/CD自动化**: 部署时自动注入正确的环境变量并验证
 ```javascript
 // .eslintrc.js
 module.exports = {

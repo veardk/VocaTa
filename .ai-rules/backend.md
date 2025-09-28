@@ -81,6 +81,8 @@ public ApiResponse<UserInfoResponse> getCurrentUserInfo() {
 }
 ```
 
+关于返回ID字段时都需要返回string类型给前端。
+
 **响应格式规范**：
 ```json
 {

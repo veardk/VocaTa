@@ -18,7 +18,7 @@ color: yellow
 - **字段类型**: 禁用ENUM，使用SMALLINT表示枚举；时间字段使用TIMESTAMP WITH TIME ZONE；JSON数据使用JSONB
 - **主键策略**: 使用BIGSERIAL PRIMARY KEY
 - **关联设计**: 禁用物理外键约束，通过独立关联表实现所有表关系
-- **审计字段**: 每张表必须包含标准审计字段：create_id BIGINT NOT NULL, update_id BIGINT, create_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, is_delete SMALLINT DEFAULT 0
+- **审计字段**: 每张表必须包含标准审计字段：create_id BIGINT NOT NULL, update_id BIGINT, create_date TIMESTAMP  NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP, is_delete SMALLINT DEFAULT 0
 - **索引策略**: 非必要情况下不创建索引，由后期手动优化添加
 
 **工作流程**:

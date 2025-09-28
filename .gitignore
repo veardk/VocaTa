@@ -164,7 +164,7 @@ Desktop.ini
 **/static/uploads/
 
 # 文档生成
-**/docs/api/
+**/.docs/
 
 # 测试覆盖率报告
 **/coverage/
@@ -176,6 +176,8 @@ Desktop.ini
 # ai task
 **/.specs/
 
+**/application-local.yml
+
 # ================================
 # 保留重要配置文件示例
 # ================================
@@ -184,3 +186,4 @@ Desktop.ini
 !**/application-example.yml
 !**/config.example.js
 
+/resources/application-local.yml

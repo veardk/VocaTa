@@ -1,17 +1,31 @@
 server:
   port: 9009
-  servlet:
-    context-path: /api
 
 spring:
+  profiles:
+    active: local
   application:
     name: vocata-server
 
-  # 本地开发数据源配置
+  # 静态资源配置
+  web:
+    resources:
+      static-locations: classpath:/static/
+      cache:
+        cachecontrol:
+          max-age: 3600
+
+  # Jackson时间格式配置
+  jackson:
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+
+  # 数据源配置
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:vocata_local}
-    username: ${DB_USERNAME:vocata_local}
-    password: ${DB_PASSWORD:vocata_local}
+    url: jdbc:postgresql://${DB_HOST:}:${DB_PORT:}/${DB_NAME:}?stringtype=unspecified
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -26,7 +40,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DATABASE:0}
+      database: 0
       timeout: 10000ms
       lettuce:
         pool:
@@ -34,6 +48,31 @@ spring:
           max-wait: -1ms
           max-idle: 8
           min-idle: 0
+
+  # 定时任务配置
+  task:
+    scheduling:
+      pool:
+        size: 10
+
+  # 邮件配置
+  mail:
+    host: smtp.163.com
+    port: 465
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
 
 # MyBatis Plus配置
 mybatis-plus:
@@ -73,9 +112,59 @@ sa-token:
   is-read-cookie: false
   # 是否从body中读取token
   is-read-body: false
+  # token前缀（支持Bearer前缀）
+  token-prefix: Bearer
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
-    database: 1
+    database: 0
+
+# AI服务配置
+ai:
+  llm:
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 默认使用七牛云AI
+  stt:
+    provider: ${AI_STT_PROVIDER:qiniu}
+  tts:
+    provider: ${AI_TTS_PROVIDER:xunfei}
+
+# 七牛云AI配置
+qiniu:
+  ai:
+    api-key: ${QINIU_AI_API_KEY:your-qiniu-ai-api-key}
+    base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
+    default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
+    timeout: ${QINIU_AI_TIMEOUT:60}
+  # 七牛云存储配置
+  access-key: ${QINIU_ACCESS_KEY:your-qiniu-access-key}
+  secret-key: ${QINIU_SECRET_KEY:your-qiniu-secret-key}
+  # 七牛云STT配置
+  stt:
+    endpoint: ${QINIU_STT_ENDPOINT:https://openai.qiniu.com/v1}
+    model: ${QINIU_STT_MODEL:asr}
+
+# Gemini配置
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:your-gemini-api-key}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    timeout: ${GEMINI_TIMEOUT:60}
+
+# OpenAI配置
+openai:
+  api:
+    key: ${OPENAI_API_KEY:your-openai-api-key}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
+    timeout: ${OPENAI_TIMEOUT:60}
+
+# SiliconFlow配置
+siliconflow:
+  ai:
+    api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key}
+    base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+    default-model: ${SILICONFLOW_AI_MODEL:Qwen/Qwen3-8B}
+    timeout: ${SILICONFLOW_TIMEOUT:60}
 
 # 本地开发日志配置
 logging:

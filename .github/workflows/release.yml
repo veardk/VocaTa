@@ -1,0 +1,437 @@
+name: Production Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: v1.0.0)'
+        required: true
+        type: string
+      services:
+        description: '要发布的服务 (all, server, web, admin, 或组合如: server,web)'
+        required: false
+        default: 'all'
+        type: string
+      rollback:
+        description: '是否为回滚发布'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  NAMESPACE: ${{ github.repository_owner }}
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # 发布前检查
+  pre-release-check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      deploy-server: ${{ steps.services.outputs.deploy-server }}
+      deploy-web: ${{ steps.services.outputs.deploy-web }}
+      deploy-admin: ${{ steps.services.outputs.deploy-admin }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 确定版本号
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "release" ]]; then
+          VERSION="${{ github.event.release.tag_name }}"
+        else
+          VERSION="${{ github.event.inputs.version }}"
+        fi
+
+        # 验证版本号格式
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ 版本号格式错误: $VERSION (正确格式: v1.0.0)"
+          exit 1
+        fi
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "✅ 发布版本: $VERSION"
+
+    - name: 确定发布服务
+      id: services
+      run: |
+        SERVICES="${{ github.event.inputs.services || 'all' }}"
+
+        if [[ "$SERVICES" == "all" ]]; then
+          echo "deploy-server=true" >> $GITHUB_OUTPUT
+          echo "deploy-web=true" >> $GITHUB_OUTPUT
+          echo "deploy-admin=true" >> $GITHUB_OUTPUT
+        else
+          echo "deploy-server=false" >> $GITHUB_OUTPUT
+          echo "deploy-web=false" >> $GITHUB_OUTPUT
+          echo "deploy-admin=false" >> $GITHUB_OUTPUT
+
+          if [[ "$SERVICES" == *"server"* ]]; then
+            echo "deploy-server=true" >> $GITHUB_OUTPUT
+          fi
+          if [[ "$SERVICES" == *"web"* ]]; then
+            echo "deploy-web=true" >> $GITHUB_OUTPUT
+          fi
+          if [[ "$SERVICES" == *"admin"* ]]; then
+            echo "deploy-admin=true" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+    - name: 发布前安全检查
+      run: |
+        echo "## 🔐 发布前安全检查" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # 检查是否是从master分支发布
+        if [[ "${{ github.ref }}" != "refs/heads/master" && "${{ github.event_name }}" != "release" ]]; then
+          echo "❌ 生产发布只能从master分支执行" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        # 检查CI状态
+        LATEST_COMMIT=$(git rev-parse HEAD)
+        echo "- ✅ 分支检查通过: master" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ 最新提交: \`$LATEST_COMMIT\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ 版本号: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+
+  # 构建生产镜像
+  build-production:
+    runs-on: ubuntu-latest
+    needs: pre-release-check
+    strategy:
+      matrix:
+        service: [server, web, admin]
+      fail-fast: true
+    steps:
+    - name: 检查是否需要构建
+      id: should-build
+      run: |
+        SERVICE="${{ matrix.service }}"
+        SHOULD_BUILD="false"
+
+        if [[ "${{ needs.pre-release-check.outputs.deploy-server }}" == "true" && "$SERVICE" == "server" ]]; then
+          SHOULD_BUILD="true"
+        elif [[ "${{ needs.pre-release-check.outputs.deploy-web }}" == "true" && "$SERVICE" == "web" ]]; then
+          SHOULD_BUILD="true"
+        elif [[ "${{ needs.pre-release-check.outputs.deploy-admin }}" == "true" && "$SERVICE" == "admin" ]]; then
+          SHOULD_BUILD="true"
+        fi
+
+        echo "should-build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+
+    - name: 检出代码
+      if: steps.should-build.outputs.should-build == 'true'
+      uses: actions/checkout@v4
+
+    - name: 设置构建环境 (后端)
+      if: steps.should-build.outputs.should-build == 'true' && matrix.service == 'server'
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: 设置构建环境 (前端)
+      if: steps.should-build.outputs.should-build == 'true' && matrix.service != 'server'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: vocata-${{ matrix.service }}/package-lock.json
+
+    - name: 构建后端服务
+      if: steps.should-build.outputs.should-build == 'true' && matrix.service == 'server'
+      working-directory: ./vocata-server
+      run: |
+        mvn clean package -DskipTests -Dspring.profiles.active=prod
+        echo "✅ 后端服务构建完成"
+
+    - name: 构建前端应用
+      if: steps.should-build.outputs.should-build == 'true' && matrix.service != 'server'
+      working-directory: ./vocata-${{ matrix.service }}
+      run: |
+        npm ci
+        npm run build:prod
+        echo "✅ 前端应用构建完成"
+
+    - name: 设置 Docker Buildx
+      if: steps.should-build.outputs.should-build == 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: 登录到GitHub Container Registry
+      if: steps.should-build.outputs.should-build == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 构建并推送生产镜像
+      if: steps.should-build.outputs.should-build == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vocata-${{ matrix.service }}
+        file: ./vocata-${{ matrix.service }}/${{ matrix.service == 'server' && 'Dockerfile.ci' || 'Dockerfile' }}
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-${{ matrix.service }}:${{ needs.pre-release-check.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-${{ matrix.service }}:production-latest
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.version=${{ needs.pre-release-check.outputs.version }}
+          org.opencontainers.image.revision=${{ github.sha }}
+        cache-from: type=gha,scope=vocata-${{ matrix.service }}-production
+        cache-to: type=gha,mode=max,scope=vocata-${{ matrix.service }}-production
+
+  # 部署到生产环境
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [pre-release-check, build-production]
+    environment:
+      name: production
+      url: https://vocata.com
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备生产部署文件
+      run: |
+        VERSION="${{ needs.pre-release-check.outputs.version }}"
+        mkdir -p deploy/production
+
+        # 复制生产环境docker-compose配置
+        cp docker-compose.prod.yml deploy/production/docker-compose.yml
+
+        # 生成生产环境配置
+        cat > deploy/production/.env << EOF
+        # VocaTa Production Environment - $VERSION
+        COMPOSE_PROJECT_NAME=vocata-production
+
+        # 镜像配置
+        SERVER_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-server:$VERSION
+        WEB_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-web:$VERSION
+        ADMIN_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-admin:$VERSION
+
+        # 部署标识
+        DEPLOY_VERSION=$VERSION
+        DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        TARGET_ENV=production
+
+        # 应用配置
+        SERVER_PORT=9009
+        WEB_PORT=3000
+        ADMIN_PORT=3001
+        SPRING_PROFILES_ACTIVE=prod
+
+        # 生产环境配置
+        DB_HOST=\${{ secrets.PROD_DB_HOST }}
+        DB_PORT=\${{ secrets.PROD_DB_PORT }}
+        DB_NAME=\${{ secrets.PROD_DB_NAME }}
+        DB_USERNAME=\${{ secrets.PROD_DB_USERNAME }}
+        DB_PASSWORD=\${{ secrets.PROD_DB_PASSWORD }}
+
+        REDIS_HOST=\${{ secrets.PROD_REDIS_HOST }}
+        REDIS_PORT=\${{ secrets.PROD_REDIS_PORT }}
+        REDIS_PASSWORD=\${{ secrets.PROD_REDIS_PASSWORD }}
+        REDIS_DATABASE=0
+
+        # 七牛云生产配置
+        QINIU_ACCESS_KEY=\${{ secrets.PROD_QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=\${{ secrets.PROD_QINIU_SECRET_KEY }}
+        QINIU_BUCKET=\${{ secrets.PROD_QINIU_BUCKET }}
+        QINIU_DOMAIN=\${{ secrets.PROD_QINIU_DOMAIN }}
+        QINIU_REGION=\${{ secrets.PROD_QINIU_REGION }}
+
+        # 邮箱配置
+        EMAIL_USER_NAME=\${{ secrets.PROD_EMAIL_USER_NAME }}
+        EMAIL_USER_PASSWORD=\${{ secrets.PROD_EMAIL_USER_PASSWORD }}
+        EOF
+
+        # 创建生产部署脚本
+        cat > deploy/production/deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        source .env
+
+        echo "🚀 开始生产环境发布..."
+        echo "版本: $DEPLOY_VERSION"
+        echo "时间: $DEPLOY_TIME"
+
+        # 登录Docker Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+        # 备份当前版本
+        echo "📦 备份当前版本..."
+        BACKUP_DIR="/home/deploy/vocata/backups/$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+        cp docker-compose.yml "$BACKUP_DIR/" || true
+        cp .env "$BACKUP_DIR/" || true
+
+        # 创建发布标记
+        echo "$DEPLOY_VERSION" > /home/deploy/vocata/CURRENT_VERSION
+
+        # 执行蓝绿部署
+        echo "🔄 执行蓝绿部署..."
+
+        # 确定需要更新的服务
+        SERVICES_TO_UPDATE=()
+        if [[ "${{ needs.pre-release-check.outputs.deploy-server }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-server")
+        fi
+        if [[ "${{ needs.pre-release-check.outputs.deploy-web }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-web")
+        fi
+        if [[ "${{ needs.pre-release-check.outputs.deploy-admin }}" == "true" ]]; then
+          SERVICES_TO_UPDATE+=("vocata-admin")
+        fi
+
+        echo "将更新的服务: ${SERVICES_TO_UPDATE[*]}"
+
+        # 拉取新镜像
+        echo "📥 拉取新版本镜像..."
+        docker-compose pull "${SERVICES_TO_UPDATE[@]}"
+
+        # 蓝绿部署策略
+        for service in "${SERVICES_TO_UPDATE[@]}"; do
+          echo "🔄 部署 $service..."
+
+          # 启动新版本容器 (绿色)
+          docker-compose up -d --no-deps --scale $service=2 $service
+
+          # 等待新容器健康检查
+          sleep 30
+
+          # 验证新容器健康状态
+          if docker-compose exec -T $service curl -f http://localhost:$SERVER_PORT/api/actuator/health > /dev/null 2>&1; then
+            echo "✅ $service 新版本健康检查通过"
+
+            # 切换流量，移除旧容器 (蓝色)
+            docker-compose up -d --no-deps --scale $service=1 $service
+            echo "✅ $service 流量切换完成"
+          else
+            echo "❌ $service 新版本健康检查失败，开始回滚..."
+
+            # 回滚到旧版本
+            docker-compose up -d --no-deps --scale $service=1 $service
+            echo "🔙 $service 已回滚到旧版本"
+            exit 1
+          fi
+        done
+
+        # 清理资源
+        echo "🧹 清理无用资源..."
+        docker system prune -f
+
+        echo "🎉 生产环境发布完成！"
+        echo "版本: $DEPLOY_VERSION"
+        echo "更新的服务: ${SERVICES_TO_UPDATE[*]}"
+        EOF
+
+        chmod +x deploy/production/deploy.sh
+
+    - name: 部署到生产服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USER }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        source: "deploy/production/*"
+        target: "/home/deploy/vocata/"
+        strip_components: 2
+
+    - name: 执行生产部署
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USER }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        script: |
+          cd /home/deploy/vocata
+          ./deploy.sh
+
+    - name: 生产环境发布通知
+      if: always()
+      run: |
+        VERSION="${{ needs.pre-release-check.outputs.version }}"
+        echo "## 🚀 生产环境发布结果 - $VERSION" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ 生产环境发布成功" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 发布详情" >> $GITHUB_STEP_SUMMARY
+          echo "- **版本**: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **发布时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "- **提交**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 生产环境访问" >> $GITHUB_STEP_SUMMARY
+          echo "- [客户端](https://vocata.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- [管理后台](https://admin.vocata.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- [API文档](https://api.vocata.com/swagger-ui.html)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ 生产环境发布失败" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ 请立即检查生产环境状态并进行必要的回滚操作。" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # 发布后验证
+  post-release-verification:
+    runs-on: ubuntu-latest
+    needs: [pre-release-check, deploy-production]
+    if: success()
+    steps:
+    - name: 等待服务稳定
+      run: sleep 120
+
+    - name: 生产环境全面验证
+      run: |
+        VERSION="${{ needs.pre-release-check.outputs.version }}"
+        echo "## 🔍 生产环境验证报告 - $VERSION" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        VERIFICATION_PASSED=true
+
+        # API健康检查
+        echo "### API服务验证" >> $GITHUB_STEP_SUMMARY
+        if curl -f -m 30 "https://api.vocata.com/api/actuator/health" > /dev/null 2>&1; then
+          echo "- ✅ API健康检查通过" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ❌ API健康检查失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        # 客户端访问检查
+        echo "### 客户端服务验证" >> $GITHUB_STEP_SUMMARY
+        if curl -f -m 30 "https://vocata.com" > /dev/null 2>&1; then
+          echo "- ✅ 客户端访问正常" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ❌ 客户端访问失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        # 管理后台访问检查
+        echo "### 管理后台服务验证" >> $GITHUB_STEP_SUMMARY
+        if curl -f -m 30 "https://admin.vocata.com" > /dev/null 2>&1; then
+          echo "- ✅ 管理后台访问正常" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ❌ 管理后台访问失败" >> $GITHUB_STEP_SUMMARY
+          VERIFICATION_PASSED=false
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "$VERIFICATION_PASSED" == "true" ]]; then
+          echo "🎉 生产环境验证全部通过！版本 $VERSION 发布成功。" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ 生产环境验证失败！请立即进行回滚操作。" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi

@@ -69,6 +69,8 @@ com.vocata.{module}/
 }
 ```
 
+关于返回ID字段时都需要返回string类型给前端
+
 ## 核心架构组件
 
 ### 1. 认证授权架构
@@ -136,7 +138,7 @@ docker run -p 9009:9009 vocata-server
 ### PostgreSQL数据类型标准
 - **整数**：BIGSERIAL (主键)、BIGINT、INTEGER、SMALLINT
 - **字符串**：VARCHAR(n)、TEXT
-- **时间**：TIMESTAMP WITH TIME ZONE、DATE、TIME
+- **时间**：TIMESTAMP 
 - **布尔**：BOOLEAN
 - **JSON**：JSONB（高性能JSON存储）
 - **数组**：支持PostgreSQL数组类型（如TEXT[]、INTEGER[]）

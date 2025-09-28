@@ -7,9 +7,11 @@ import com.vocata.common.utils.UserContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import cn.dev33.satoken.context.SaHolder;
 
 /**
  * Sa-Token配置
+ * 
  */
 @Configuration
 public class SaTokenConfig implements WebMvcConfigurer {
@@ -17,28 +19,51 @@ public class SaTokenConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {
-            // 全局登录检查
-            SaRouter.match("/**")
-                    .notMatch("/api/open/**")
-                    .notMatch("/api/client/auth/**")
-                    .notMatch("/static/**")
-                    .notMatch("/images/**")
-                    .notMatch("/css/**")
-                    .notMatch("/js/**")
-                    .notMatch("/actuator/health")
-                    .notMatch("/error")
-                    .notMatch("/favicon.ico")
-                    .check(r -> {
-                        StpUtil.checkLogin();
-                        // 设置用户上下文
-                        setUserContext();
-                    });
+            // 跨域预检请求(OPTIONS)，无需认证
+            SaRouter.match("**").check(r -> {
+                if ("OPTIONS".equals(SaHolder.getRequest().getMethod())) {
+                    return;
+                }
+            });
 
-            // 管理端权限控制
+            // 公开接口，无需认证
+            SaRouter.match("/api/open/**", "/api/health", "/actuator/health", "/error", "/favicon.ico", "/debug/**",
+                          "/ws/**", "/websocket/**")
+                    .stop();
+
+            // 静态资源，无需认证
+            SaRouter.match("/static/**", "/images/**", "/css/**", "/js/**",
+                          "/websocket-test.html", "/*.html", "/*.css", "/*.js",
+                          "/favicon.ico", "/*.ico")
+                    .stop();
+
+            // 客户端认证相关接口，无需预先认证
+            SaRouter.match("/api/client/auth/login", "/api/client/auth/register",
+                          "/api/client/auth/send-register-code", "/api/client/auth/send-reset-code",
+                          "/api/client/auth/reset-password", "/api/client/auth/refresh-token")
+                    .stop();
+
+            // 管理员认证接口，无需预先认证（但会在服务层验证管理员身份）
+            SaRouter.match("/api/admin/auth/login", "/api/admin/auth/refresh-token")
+                    .stop();
+
+            // 管理员专用接口，需要管理员权限
             SaRouter.match("/api/admin/**").check(r -> {
                 StpUtil.checkLogin();
                 setUserContext();
                 UserContext.checkAdmin();
+            });
+
+            // 客户端接口，需要登录（管理员和普通用户都能访问）
+            SaRouter.match("/api/client/**").check(r -> {
+                StpUtil.checkLogin();
+                setUserContext();
+            });
+
+            // 其他接口，需要登录认证（通用接口）
+            SaRouter.match("/**").check(r -> {
+                StpUtil.checkLogin();
+                setUserContext();
             });
 
         })).addPathPatterns("/**");
@@ -58,7 +83,11 @@ public class SaTokenConfig implements WebMvcConfigurer {
             userContext.setUserId(userId);
             // 可以从Session中获取更多用户信息
             userContext.setUsername((String) StpUtil.getSession().get("username"));
-            userContext.setIsAdmin((Boolean) StpUtil.getSession().get("isAdmin"));
+
+            // 安全获取isAdmin字段，避免null值
+            Boolean isAdmin = (Boolean) StpUtil.getSession().get("isAdmin");
+            userContext.setIsAdmin(isAdmin != null ? isAdmin : false);
+
             userContext.setEmail((String) StpUtil.getSession().get("email"));
 
             UserContext.set(userContext);

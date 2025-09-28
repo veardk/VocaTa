@@ -1,18 +1,175 @@
-# 测试环境配置 (前后端联调)
+# 测试环境配置
+server:
+  port: ${SERVER_PORT:9009}
+
 spring:
   # 数据源配置
   datasource:
-    url: jdbc:postgresql://${DB_HOST:test-server.vocata.com}:${DB_PORT:5432}/${DB_NAME:vocata_test}
-    username: ${DB_USERNAME:vocata_test}
-    password: ${DB_PASSWORD:vocata_test}
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?stringtype=unspecified
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   # Redis配置
   data:
     redis:
-      host: ${REDIS_HOST:test-server.vocata.com}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DB:1}
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+  # 邮件配置（使用QQ邮箱，对云服务器更友好）
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: ${EMAIL_USER_NAME:your-qq-email@qq.com}
+    password: ${EMAIL_USER_PASSWORD:your-qq-auth-code}
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          timeout: 30000
+          connectiontimeout: 30000
+          writetimeout: 30000
+
+# MyBatis Plus配置
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: isDelete
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      insert-strategy: NOT_NULL
+      update-strategy: NOT_NULL
+    banner: false
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+# Sa-Token配置
+sa-token:
+  # token名称
+  token-name: Authorization
+  # token有效期，单位s (7天)
+  timeout: 604800
+  # token临时有效期，单位s
+  active-timeout: -1
+  # 是否允许同一账号并发登录
+  is-concurrent: true
+  # 在多人登录同一账号时，是否共用一个token
+  is-share: true
+  # token风格
+  token-style: uuid
+  # 是否输出操作日志
+  is-log: true
+  # 是否从header中读取token
+  is-read-header: true
+  # 是否从cookie中读取token
+  is-read-cookie: false
+  # 是否从body中读取token
+  is-read-body: false
+  # token前缀（支持Bearer前缀）
+  token-prefix: Bearer
+  # 配置Redis作为Sa-Token的持久层
+  alone-redis:
+    database: 0
+
+# AI服务配置
+ai:
+  llm:
+    provider: ${AI_LLM_PROVIDER:qiniu}  # 默认使用七牛云AI
+  stt:
+    provider: ${AI_STT_PROVIDER:qiniu}
+  tts:
+    provider: ${AI_TTS_PROVIDER:xunfei}
+
+# 七牛云配置
+qiniu:
+  access-key: ${QINIU_ACCESS_KEY:your-qiniu-access-key}
+  secret-key: ${QINIU_SECRET_KEY:your-qiniu-secret-key}
+  bucket: ${QINIU_BUCKET:vocata-files-staging}
+  domain: ${QINIU_DOMAIN:https://test-files.vocata.com}
+  region: ${QINIU_REGION:huadong}
+  # 七牛云AI配置
+  ai:
+    api-key: ${QINIU_AI_API_KEY:your-qiniu-ai-api-key}
+    base-url: ${QINIU_AI_BASE_URL:https://openai.qiniu.com/v1}
+    default-model: ${QINIU_AI_MODEL:x-ai/grok-4-fast}
+    timeout: ${QINIU_AI_TIMEOUT:60}
+  # 七牛云STT配置
+  stt:
+    endpoint: ${QINIU_STT_ENDPOINT:https://openai.qiniu.com/v1}
+    model: ${QINIU_STT_MODEL:asr}
+
+# Gemini配置
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:your-gemini-api-key}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    timeout: ${GEMINI_TIMEOUT:60}
+
+# OpenAI配置
+openai:
+  api:
+    key: ${OPENAI_API_KEY:your-openai-api-key}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
+    timeout: ${OPENAI_TIMEOUT:60}
+
+# SiliconFlow配置
+siliconflow:
+  ai:
+    api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key}
+    base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+    default-model: ${SILICONFLOW_AI_MODEL:Qwen/Qwen3-8B}
+    timeout: ${SILICONFLOW_TIMEOUT:120}
+
+# 科大讯飞配置
+xunfei:
+  # STT配置
+  stt:
+    app-id: ${XUNFEI_STT_APP_ID:your-xunfei-stt-app-id}
+    api-key: ${XUNFEI_STT_API_KEY:your-xunfei-stt-api-key}
+    secret-key: ${XUNFEI_STT_SECRET_KEY:your-xunfei-stt-secret-key}
+    host: ${XUNFEI_STT_HOST:iat-api.xfyun.cn}
+    path: ${XUNFEI_STT_PATH:/v2/iat}
+  # TTS配置
+  tts:
+    app-id: ${XUNFEI_TTS_APP_ID:your-xunfei-tts-app-id}
+    api-key: ${XUNFEI_TTS_API_KEY:your-xunfei-tts-api-key}
+    secret-key: ${XUNFEI_TTS_SECRET_KEY:your-xunfei-tts-secret-key}
+    host: ${XUNFEI_TTS_HOST:tts-api.xfyun.cn}
+    path: ${XUNFEI_TTS_PATH:/v2/tts}
+
+# 火山引擎TTS配置
+volcan:
+  tts:
+    access-token: ${VOLCAN_TTS_ACCESS_TOKEN:your-volcan-access-token}
+    app-id: ${VOLCAN_TTS_APP_ID:your-volcan-app-id}
+    host: ${VOLCAN_TTS_HOST:openspeech.bytedance.com}
+    region: ${VOLCAN_TTS_REGION:ap-beijing-1}
 
 # 日志配置
 logging:
@@ -20,17 +177,9 @@ logging:
     com.vocata: info
     org.springframework.web: info
     org.springframework.security: info
+    com.baomidou.mybatisplus: warn
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
   file:
     name: logs/vocata-test.log
-
-# MyBatis Plus配置 (测试环境关闭SQL日志)
-mybatis-plus:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
-# Sa-Token配置 (测试环境调整)
-sa-token:
-  # 是否输出操作日志
-  is-log: true
-  # token有效期调整为7天
-  timeout: 604800

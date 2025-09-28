@@ -1,0 +1,597 @@
+name: Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '目标环境'
+        required: true
+        type: choice
+        options:
+          - test
+          - production
+        default: 'production'
+      version:
+        description: '回滚到的版本 (如: v1.0.0)'
+        required: true
+        type: string
+      reason:
+        description: '回滚原因'
+        required: true
+        type: string
+      confirm:
+        description: '确认回滚 (输入 ROLLBACK 确认)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  # 预检查
+  pre-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should-rollback: ${{ steps.check.outputs.should-rollback }}
+      target-env: ${{ inputs.environment }}
+      target-version: ${{ inputs.version }}
+
+    steps:
+    - name: 验证输入
+      id: check
+      run: |
+        # 检查确认输入
+        if [ "${{ inputs.confirm }}" != "ROLLBACK" ]; then
+          echo "❌ 请输入 ROLLBACK 来确认回滚操作"
+          exit 1
+        fi
+
+        # 检查版本格式
+        if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ 版本格式不正确: ${{ inputs.version }} (应为 vX.Y.Z)"
+          exit 1
+        fi
+
+        # 检查回滚原因
+        if [ -z "${{ inputs.reason }}" ]; then
+          echo "❌ 请提供回滚原因"
+          exit 1
+        fi
+
+        echo "✅ 预检查通过"
+        echo "should-rollback=true" >> $GITHUB_OUTPUT
+
+    - name: 创建回滚Issue
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const title = `🚨 紧急回滚 - ${{ inputs.environment }} 环境到 ${{ inputs.version }}`;
+          const body = `## 回滚信息
+
+          - **环境**: ${{ inputs.environment }}
+          - **回滚版本**: ${{ inputs.version }}
+          - **回滚原因**: ${{ inputs.reason }}
+          - **操作人**: ${{ github.actor }}
+          - **操作时间**: ${new Date().toISOString()}
+          - **工作流**: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ## 回滚状态
+          - [ ] 备份当前状态
+          - [ ] 执行回滚
+          - [ ] 健康检查
+          - [ ] 验证功能
+
+          ## 注意事项
+          此Issue由紧急回滚工作流自动创建，请及时跟进处理结果。
+          `;
+
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['rollback', 'urgent', '${{ inputs.environment }}']
+          });
+
+          console.log(`创建回滚Issue: ${issue.data.html_url}`);
+
+  # 测试环境回滚
+  rollback-test:
+    runs-on: ubuntu-latest
+    needs: pre-check
+    if: needs.pre-check.outputs.should-rollback == 'true' && inputs.environment == 'test'
+    environment:
+      name: test
+      url: https://test.vocata.com
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备回滚文件
+      run: |
+        mkdir -p rollback/test
+
+        # 创建回滚环境变量
+        cat > rollback/test/.env << EOF
+        # VocaTa Test Environment Rollback Configuration
+        COMPOSE_PROJECT_NAME=vocata-test
+
+        # 回滚镜像配置
+        SERVER_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-server:${{ inputs.version }}
+        WEB_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-web:${{ inputs.version }}
+        ADMIN_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-admin:${{ inputs.version }}
+
+        # 数据库配置
+        DB_HOST=${{ secrets.DB_HOST }}
+        DB_PORT=${{ secrets.DB_PORT }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USERNAME=${{ secrets.DB_USERNAME }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+        # Redis配置
+        REDIS_HOST=${{ secrets.REDIS_HOST }}
+        REDIS_PORT=${{ secrets.REDIS_PORT }}
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        REDIS_DATABASE=${{ secrets.REDIS_DATABASE }}
+
+        # 其他配置
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        QINIU_BUCKET=${{ secrets.QINIU_BUCKET }}
+        QINIU_DOMAIN=${{ secrets.QINIU_DOMAIN }}
+        QINIU_REGION=${{ secrets.QINIU_REGION }}
+        EMAIL_USER_NAME=${{ secrets.EMAIL_USER_NAME }}
+        EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
+
+        # 端口配置
+        SERVER_PORT=9009
+        WEB_PORT=3000
+        ADMIN_PORT=3001
+        SPRING_PROFILES_ACTIVE=test
+        EOF
+
+        # 复制Docker Compose配置
+        cp docker-compose.test.yml rollback/test/docker-compose.yml
+
+        # 创建紧急回滚脚本
+        cat > rollback/test/emergency-rollback.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        echo "🚨 开始紧急回滚到版本: ${{ inputs.version }}"
+        echo "回滚原因: ${{ inputs.reason }}"
+
+        # 登录Docker Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+        # 备份当前状态
+        echo "📦 备份当前状态..."
+        docker-compose ps > current_state_$(date +%Y%m%d_%H%M%S).log || true
+        docker images | grep vocata > current_images_$(date +%Y%m%d_%H%M%S).log || true
+
+        # 停止所有服务
+        echo "⏹️ 停止当前服务..."
+        docker-compose down --remove-orphans || true
+
+        # 拉取回滚版本镜像
+        echo "📥 拉取回滚版本镜像..."
+        docker-compose pull
+
+        # 启动服务
+        echo "🚀 启动回滚版本..."
+        docker-compose up -d
+
+        # 等待服务启动
+        echo "⏳ 等待服务启动..."
+        sleep 60
+
+        # 健康检查
+        echo "🔍 执行健康检查..."
+
+        # 检查后端服务
+        for i in {1..10}; do
+          if curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
+            echo "✅ 后端服务回滚成功"
+            break
+          else
+            echo "⏳ 等待后端服务启动... ($i/10)"
+            sleep 10
+          fi
+          if [ $i -eq 10 ]; then
+            echo "❌ 后端服务回滚失败"
+            docker-compose logs vocata-server
+            exit 1
+          fi
+        done
+
+        # 检查前端服务
+        for i in {1..6}; do
+          if curl -f http://localhost:3000 > /dev/null 2>&1; then
+            echo "✅ 前端客户端回滚成功"
+            break
+          else
+            echo "⏳ 等待前端客户端启动... ($i/6)"
+            sleep 5
+          fi
+          if [ $i -eq 6 ]; then
+            echo "❌ 前端客户端回滚失败"
+            docker-compose logs vocata-web
+            exit 1
+          fi
+        done
+
+        # 检查管理后台
+        for i in {1..6}; do
+          if curl -f http://localhost:3001 > /dev/null 2>&1; then
+            echo "✅ 管理后台回滚成功"
+            break
+          else
+            echo "⏳ 等待管理后台启动... ($i/6)"
+            sleep 5
+          fi
+          if [ $i -eq 6 ]; then
+            echo "❌ 管理后台回滚失败"
+            docker-compose logs vocata-admin
+            exit 1
+          fi
+        done
+
+        echo "🎉 测试环境回滚成功！版本: ${{ inputs.version }}"
+        docker-compose ps
+        EOF
+
+        chmod +x rollback/test/emergency-rollback.sh
+
+    - name: 复制文件到测试服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        source: "rollback/test/*"
+        target: "/home/deploy/vocata/"
+        strip_components: 2
+
+    - name: 执行测试环境回滚
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
+        envs: VERSION
+        script: |
+          cd /home/deploy/vocata
+          ./emergency-rollback.sh
+
+  # 生产环境回滚
+  rollback-production:
+    runs-on: ubuntu-latest
+    needs: pre-check
+    if: needs.pre-check.outputs.should-rollback == 'true' && inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://vocata.com
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 准备生产环境回滚文件
+      run: |
+        mkdir -p rollback/production
+
+        # 创建回滚环境变量
+        cat > rollback/production/.env << EOF
+        # VocaTa Production Environment Rollback Configuration
+        COMPOSE_PROJECT_NAME=vocata-prod
+
+        # 回滚镜像配置
+        SERVER_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-server:${{ inputs.version }}
+        WEB_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-web:${{ inputs.version }}
+        ADMIN_IMAGE=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/vocata-admin:${{ inputs.version }}
+
+        # 数据库配置
+        DB_HOST=${{ secrets.DB_HOST }}
+        DB_PORT=${{ secrets.DB_PORT }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USERNAME=${{ secrets.DB_USERNAME }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+        # Redis配置
+        REDIS_HOST=${{ secrets.REDIS_HOST }}
+        REDIS_PORT=${{ secrets.REDIS_PORT }}
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        REDIS_DATABASE=${{ secrets.REDIS_DATABASE }}
+
+        # 其他配置
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        QINIU_BUCKET=${{ secrets.QINIU_BUCKET }}
+        QINIU_DOMAIN=${{ secrets.QINIU_DOMAIN }}
+        QINIU_REGION=${{ secrets.QINIU_REGION }}
+        EMAIL_USER_NAME=${{ secrets.EMAIL_USER_NAME }}
+        EMAIL_USER_PASSWORD=${{ secrets.EMAIL_USER_PASSWORD }}
+
+        # 端口配置
+        SERVER_PORT=9009
+        WEB_PORT=8080
+        ADMIN_PORT=8081
+        SPRING_PROFILES_ACTIVE=prod
+        EOF
+
+        # 复制Docker Compose配置
+        cp docker-compose.prod.yml rollback/production/docker-compose.yml
+
+        # 创建生产环境紧急回滚脚本
+        cat > rollback/production/emergency-rollback.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        # 颜色输出
+        RED='\033[0;31m'
+        GREEN='\033[0;32m'
+        BLUE='\033[0;34m'
+        YELLOW='\033[1;33m'
+        NC='\033[0m'
+
+        log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+        log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+        log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+        log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+        log_error "🚨 生产环境紧急回滚"
+        log_info "回滚版本: ${{ inputs.version }}"
+        log_info "回滚原因: ${{ inputs.reason }}"
+        log_info "操作人: ${{ github.actor }}"
+
+        # 确认操作
+        echo "生产环境回滚是高风险操作，请再次确认:"
+        echo "版本: ${{ inputs.version }}"
+        echo "原因: ${{ inputs.reason }}"
+
+        # 登录Docker Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+        # 紧急备份
+        log_info "🗄️ 执行紧急备份..."
+        BACKUP_DIR="/var/backups/vocata/emergency"
+        mkdir -p $BACKUP_DIR
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+        # 备份当前状态
+        docker-compose ps > $BACKUP_DIR/rollback_before_${TIMESTAMP}.log || true
+        docker images | grep vocata > $BACKUP_DIR/images_before_${TIMESTAMP}.log || true
+        cp .env $BACKUP_DIR/env_before_${TIMESTAMP}.backup || true
+
+        # 备份数据库（如果可能）
+        if command -v pg_dump >/dev/null 2>&1; then
+          log_info "备份数据库..."
+          PGPASSWORD=$DB_PASSWORD pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -d $DB_NAME > $BACKUP_DIR/emergency_backup_${TIMESTAMP}.sql || log_warning "数据库备份失败"
+        fi
+
+        # 创建回滚点记录
+        cat > $BACKUP_DIR/rollback_info_${TIMESTAMP}.json << EOF_JSON
+        {
+          "rollback_time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "target_version": "${{ inputs.version }}",
+          "reason": "${{ inputs.reason }}",
+          "operator": "${{ github.actor }}",
+          "github_run_id": "${{ github.run_id }}",
+          "backup_location": "$BACKUP_DIR"
+        }
+        EOF_JSON
+
+        # 拉取回滚版本镜像
+        log_info "📥 拉取回滚版本镜像..."
+        docker-compose pull
+
+        # 执行滚动回滚（最小化停机时间）
+        log_info "🔄 执行滚动回滚..."
+
+        # 先启动新版本的backup服务
+        docker-compose up -d vocata-server-backup || log_warning "备用服务启动失败，继续执行直接回滚"
+
+        # 等待备用服务就绪
+        sleep 30
+
+        # 检查备用服务健康状态
+        if curl -f http://localhost:9011/api/actuator/health > /dev/null 2>&1; then
+          log_success "备用服务就绪，执行流量切换"
+          # 这里应该切换负载均衡器配置
+          # 实际环境中需要根据具体的负载均衡器进行配置
+        else
+          log_warning "备用服务未就绪，执行直接回滚"
+        fi
+
+        # 停止主服务并启动回滚版本
+        log_info "🔄 切换到回滚版本..."
+        docker-compose down vocata-server vocata-web vocata-admin || true
+        docker-compose up -d vocata-server vocata-web vocata-admin
+
+        # 等待服务启动
+        log_info "⏳ 等待服务启动..."
+        sleep 90
+
+        # 健康检查
+        log_info "🔍 执行健康检查..."
+
+        # 检查后端服务
+        HEALTH_CHECK_PASSED=true
+        for i in {1..15}; do
+          if curl -f http://localhost:9009/api/actuator/health > /dev/null 2>&1; then
+            log_success "✅ 后端服务回滚成功"
+            break
+          else
+            log_info "⏳ 等待后端服务启动... ($i/15)"
+            sleep 20
+          fi
+          if [ $i -eq 15 ]; then
+            log_error "❌ 后端服务回滚失败"
+            docker-compose logs --tail=100 vocata-server
+            HEALTH_CHECK_PASSED=false
+          fi
+        done
+
+        # 检查前端服务
+        for i in {1..10}; do
+          if curl -f http://localhost:8080 > /dev/null 2>&1; then
+            log_success "✅ 前端客户端回滚成功"
+            break
+          else
+            log_info "⏳ 等待前端客户端启动... ($i/10)"
+            sleep 10
+          fi
+          if [ $i -eq 10 ]; then
+            log_error "❌ 前端客户端回滚失败"
+            docker-compose logs --tail=100 vocata-web
+            HEALTH_CHECK_PASSED=false
+          fi
+        done
+
+        # 检查管理后台
+        for i in {1..10}; do
+          if curl -f http://localhost:8081 > /dev/null 2>&1; then
+            log_success "✅ 管理后台回滚成功"
+            break
+          else
+            log_info "⏳ 等待管理后台启动... ($i/10)"
+            sleep 10
+          fi
+          if [ $i -eq 10 ]; then
+            log_error "❌ 管理后台回滚失败"
+            docker-compose logs --tail=100 vocata-admin
+            HEALTH_CHECK_PASSED=false
+          fi
+        done
+
+        # 清理备用服务
+        docker-compose down vocata-server-backup vocata-web-backup vocata-admin-backup || true
+
+        if [ "$HEALTH_CHECK_PASSED" = true ]; then
+          log_success "🎉 生产环境紧急回滚成功！"
+          log_info "版本: ${{ inputs.version }}"
+          log_info "备份位置: $BACKUP_DIR"
+
+          # 显示服务状态
+          echo ""
+          echo "当前服务状态:"
+          docker-compose ps
+
+          echo ""
+          echo "回滚完成时间: $(date)"
+        else
+          log_error "❌ 回滚后健康检查失败，请立即检查服务状态"
+          exit 1
+        fi
+        EOF
+
+        chmod +x rollback/production/emergency-rollback.sh
+
+    - name: 复制文件到生产服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
+        source: "rollback/production/*"
+        target: "/home/deploy/vocata/"
+        strip_components: 2
+
+    - name: 执行生产环境紧急回滚
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
+        envs: VERSION
+        timeout: 1800  # 30分钟超时
+        script: |
+          cd /home/deploy/vocata
+          ./emergency-rollback.sh
+
+  # 回滚验证
+  post-rollback-check:
+    runs-on: ubuntu-latest
+    needs: [pre-check, rollback-test, rollback-production]
+    if: always() && needs.pre-check.outputs.should-rollback == 'true'
+
+    steps:
+    - name: 生成回滚报告
+      run: |
+        echo "## 🚨 紧急回滚报告" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 基本信息" >> $GITHUB_STEP_SUMMARY
+        echo "- **目标环境**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **回滚版本**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **回滚原因**: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **操作人**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **操作时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # 检查回滚结果
+        if [ "${{ inputs.environment }}" = "test" ]; then
+          if [ "${{ needs.rollback-test.result }}" = "success" ]; then
+            echo "### ✅ 测试环境回滚结果: 成功" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ 测试环境回滚结果: 失败" >> $GITHUB_STEP_SUMMARY
+          fi
+        elif [ "${{ inputs.environment }}" = "production" ]; then
+          if [ "${{ needs.rollback-production.result }}" = "success" ]; then
+            echo "### ✅ 生产环境回滚结果: 成功" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ 生产环境回滚结果: 失败" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 后续行动" >> $GITHUB_STEP_SUMMARY
+        echo "- [ ] 验证业务功能正常" >> $GITHUB_STEP_SUMMARY
+        echo "- [ ] 检查数据一致性" >> $GITHUB_STEP_SUMMARY
+        echo "- [ ] 通知相关团队" >> $GITHUB_STEP_SUMMARY
+        echo "- [ ] 分析回滚原因" >> $GITHUB_STEP_SUMMARY
+        echo "- [ ] 制定预防措施" >> $GITHUB_STEP_SUMMARY
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 访问链接" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ inputs.environment }}" = "test" ]; then
+          echo "- [测试环境](https://test.vocata.com)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- [生产环境](https://vocata.com)" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: 发送回滚通知
+      if: always()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const success = ${{ (needs.rollback-test.result == 'success' && inputs.environment == 'test') || (needs.rollback-production.result == 'success' && inputs.environment == 'production') }};
+          const statusEmoji = success ? '✅' : '❌';
+          const statusText = success ? '成功' : '失败';
+
+          const title = `${statusEmoji} 紧急回滚${statusText} - ${{ inputs.environment }} 环境`;
+          const body = `## 回滚${statusText}
+
+          - **环境**: ${{ inputs.environment }}
+          - **版本**: ${{ inputs.version }}
+          - **原因**: ${{ inputs.reason }}
+          - **操作人**: ${{ github.actor }}
+          - **工作流**: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ${success ? '回滚操作已完成，请验证服务功能。' : '回滚操作失败，请立即介入处理！'}
+          `;
+
+          // 创建或更新评论
+          const comments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number || 1 // 如果有关联的Issue
+          });
+
+          console.log(title);
+          console.log(body);

@@ -1,0 +1,287 @@
+# VocaTa生产环境 Docker Compose 配置
+version: '3.8'
+
+x-app-common: &app-common
+  restart: unless-stopped
+  networks:
+    - vocata-network
+  environment:
+    - TZ=Asia/Shanghai
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "100m"
+      max-file: "3"
+
+x-healthcheck-web: &healthcheck-web
+  test: ["CMD", "curl", "-f", "http://localhost/"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+
+services:
+  # 后端服务
+  vocata-server:
+    <<: *app-common
+    image: ${SERVER_IMAGE:-ghcr.io/leivik/vocata-server:latest}
+    container_name: vocata-server
+    ports:
+      - "${SERVER_PORT:-9009}:9009"
+    environment:
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SERVER_PORT=9009
+      # 数据库配置
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Redis配置
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DATABASE=${REDIS_DATABASE:-0}
+      # 七牛云配置
+      - QINIU_ACCESS_KEY=${QINIU_ACCESS_KEY}
+      - QINIU_SECRET_KEY=${QINIU_SECRET_KEY}
+      - QINIU_BUCKET=${QINIU_BUCKET}
+      - QINIU_DOMAIN=${QINIU_DOMAIN}
+      - QINIU_REGION=${QINIU_REGION}
+      # 邮箱配置
+      - EMAIL_USER_NAME=${EMAIL_USER_NAME}
+      - EMAIL_USER_PASSWORD=${EMAIL_USER_PASSWORD}
+      # AI服务配置
+      - AI_LLM_PROVIDER=${AI_LLM_PROVIDER:-qiniu}
+      - QINIU_AI_API_KEY=${QINIU_AI_API_KEY}
+      - QINIU_AI_BASE_URL=${QINIU_AI_BASE_URL:-https://openai.qiniu.com/v1}
+      - QINIU_AI_MODEL=${QINIU_AI_MODEL:-x-ai/grok-4-fast}
+      - QINIU_AI_TIMEOUT=${QINIU_AI_TIMEOUT:-60}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # JVM优化配置
+      - JAVA_OPTS=-Xms1g -Xmx3g -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+OptimizeStringConcat
+      - TZ=Asia/Shanghai
+    volumes:
+      - server-logs:/var/log/vocata
+      - server-uploads:/app/uploads
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9009/api/actuator/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+
+  # 前端客户端
+  vocata-web:
+    <<: *app-common
+    image: ${WEB_IMAGE:-ghcr.io/leivik/vocata-web:latest}
+    container_name: vocata-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - web-logs:/var/log/nginx
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck: *healthcheck-web
+    depends_on:
+      vocata-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.2'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # 管理后台
+  vocata-admin:
+    <<: *app-common
+    image: ${ADMIN_IMAGE:-ghcr.io/leivik/vocata-admin:latest}
+    container_name: vocata-admin
+    ports:
+      - "${ADMIN_PORT:-8081}:80"
+    volumes:
+      - admin-logs:/var/log/nginx
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck: *healthcheck-web
+    depends_on:
+      vocata-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.2'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # Nginx反向代理
+  nginx:
+    <<: *app-common
+    image: nginx:1.25-alpine
+    container_name: vocata-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/includes:/etc/nginx/includes:ro
+      - nginx-logs:/var/log/nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - vocata-server
+      - vocata-web
+      - vocata-admin
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+        reservations:
+          memory: 64M
+          cpus: '0.2'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # 监控服务 - Prometheus
+  prometheus:
+    <<: *app-common
+    image: prom/prometheus:v2.47.0
+    container_name: vocata-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - vocata-server
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    profiles:
+      - monitoring
+
+  # 监控可视化 - Grafana
+  grafana:
+    <<: *app-common
+    image: grafana/grafana:10.1.0
+    container_name: vocata-grafana
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - TZ=Asia/Shanghai
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.2'
+    profiles:
+      - monitoring
+
+# 数据卷
+volumes:
+  server-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/vocata/server
+  server-uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/vocata/uploads
+  web-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/vocata/web
+  admin-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/vocata/admin
+  nginx-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/vocata/nginx
+  prometheus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/vocata/prometheus
+  grafana-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/vocata/grafana
+
+# 网络配置
+networks:
+  vocata-network:
+    driver: bridge
+    name: ${COMPOSE_PROJECT_NAME:-vocata-prod}-network
+    driver_opts:
+      com.docker.network.bridge.name: vocata-br
