@@ -7,6 +7,7 @@ import router from './router'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import '@/utils/rem.js'
 import '@/assets/styles/fonts.css'
+import '@/assets/styles/pagination-theme.css'
 import { zhCn } from 'element-plus/es/locales.mjs'
 const app = createApp(App)
 
