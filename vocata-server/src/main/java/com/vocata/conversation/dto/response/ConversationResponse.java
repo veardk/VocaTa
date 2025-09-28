@@ -28,6 +28,11 @@ public class ConversationResponse {
     private String characterAvatarUrl;
 
     /**
+     * 角色问候语
+     */
+    private String greeting;
+
+    /**
      * 对话标题
      */
     private String title;
@@ -84,6 +89,14 @@ public class ConversationResponse {
 
     public void setCharacterAvatarUrl(String characterAvatarUrl) {
         this.characterAvatarUrl = characterAvatarUrl;
+    }
+
+    public String getGreeting() {
+        return greeting;
+    }
+
+    public void setGreeting(String greeting) {
+        this.greeting = greeting;
     }
 
     public String getTitle() {

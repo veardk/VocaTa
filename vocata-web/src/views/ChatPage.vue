@@ -194,6 +194,7 @@ interface VoiceTranscriptEntry {
 }
 
 const voiceTranscripts = ref<VoiceTranscriptEntry[]>([])
+const hasShownGreeting = ref(false)
 
 interface TypewriterState {
   message: ChatMessage
@@ -272,6 +273,7 @@ watch(
       currentStreamingMessage.value = null
       isAISpeaking.value = false
       voiceTranscripts.value = []
+      hasShownGreeting.value = false
 
       try {
         // 重新加载（强制不使用缓存）
@@ -330,6 +332,24 @@ const loadRecentMessages = async (limit: number = 20) => {
       // 按时间顺序排列（早的在前）
       chats.value = messages.reverse()
       currentOffset.value = res.data.length
+
+      if (messages.length > 0) {
+        hasShownGreeting.value = true
+      } else if (!hasShownGreeting.value) {
+        const greetingText = currentConversation.value?.greeting?.trim()
+        if (greetingText) {
+          hasShownGreeting.value = true
+          chats.value = [{
+            type: 'receive',
+            content: greetingText,
+            senderType: 2,
+            contentType: 1,
+            createDate: new Date().toISOString(),
+            characterName: currentConversation.value.characterName,
+            metadata: { isGreeting: true }
+          }]
+        }
+      }
 
       console.log('📥 加载消息完成:', {
         messagesCount: messages.length,

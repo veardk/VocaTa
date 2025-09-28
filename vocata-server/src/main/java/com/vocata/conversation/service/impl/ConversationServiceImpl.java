@@ -365,6 +365,7 @@ public class ConversationServiceImpl implements ConversationService {
             if (character != null) {
                 response.setCharacterName(character.getName());
                 response.setCharacterAvatarUrl(character.getAvatarUrl());
+                response.setGreeting(character.getGreeting());
             }
         }
 

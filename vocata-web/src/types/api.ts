@@ -86,6 +86,7 @@ export interface ConversationResponse {
   characterId: string,
   characterName: string,
   characterAvatarUrl: string,
+  greeting?: string,
   title: string | null,
   lastMessageSummary: string | null,
   status: number,
