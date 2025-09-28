@@ -204,15 +204,24 @@ const toggleSidebar = () => {
 }
 const showRoleGallery = () => {
   console.log('showRoleGallery')
+  if (isM.value) {
+    toggleSidebar()
+  }
   router.push('/searchRole')
 }
 const createNewRole = () => {
   console.log('createNewRole')
+  if (isM.value) {
+    toggleSidebar()
+  }
   router.push('/newRole')
 }
 const selectChat = (conversationUuid: string) => {
   console.log('selectChat', conversationUuid)
   activeChatId.value = conversationUuid
+  if (isM.value) {
+    toggleSidebar()
+  }
   router.push(`/chat/${conversationUuid}`)
 }
 const searchIconHandler = () => {

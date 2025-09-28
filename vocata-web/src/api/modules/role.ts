@@ -18,6 +18,14 @@ export const roleApi = {
       params
     })
   },
+  // 获取我的角色列表
+  getMyRoleList() {
+    return request({
+      url: '/api/client/character/my',
+      method: 'get',
+      // params
+    })
+  },
   // 搜索角色
   searchRole(params: { keyword: string }) {
     return request({

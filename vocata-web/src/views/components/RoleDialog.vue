@@ -78,9 +78,12 @@ const isM = computed(() => isMobile())
   &.mobile {
     width: 95%;
     position: fixed;
+    padding: 0.2rem;
     .top {
       margin: 0.1rem 0;
       .avatar {
+        width: 0.7rem;
+        height: 0.8rem;
         margin-right: 0.1rem;
       }
     }
@@ -133,8 +136,8 @@ const isM = computed(() => isMobile())
       white-space: wrap;
     }
     .avatar {
-      width: 0.5rem;
-      height: 0.5rem;
+      width: 1rem;
+      height: 1rem;
       border-radius: 0.1rem;
       overflow: hidden;
       margin-right: 0.2rem;
