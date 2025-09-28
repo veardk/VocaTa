@@ -126,9 +126,7 @@
         :total="total"
         :page-size="searchParam.pageSize"
         :current-page="searchParam.pageNum"
-        @prev-click="searchParam.pageNum--"
-        @next-click="searchParam.pageNum++"
-        @current-change="searchParam.pageNum = $event"
+        @current-change="handlePageChange"
         hide-on-single-page
       />
     </div>
@@ -308,6 +306,14 @@ const showNotice = () => {
 // 关闭公告
 const closeNotice = () => {
   showNoticeCard.value = false
+}
+
+// 处理分页变化
+const handlePageChange = (page: number) => {
+  if (page < 1 || (total.value > 0 && page > Math.ceil(total.value / searchParam.value.pageSize))) {
+    return
+  }
+  searchParam.value.pageNum = page
 }
 </script>
 
@@ -733,48 +739,63 @@ const closeNotice = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem;
-  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  margin-top: 0.3rem;
 }
 
-// 分页组件样式优化
-:deep(.el-pagination) {
+// 分页组件样式优化 - 黑白灰主题
+.pagination-container :deep(.el-pagination) {
+  --el-color-primary: #333333;
+  --el-color-primary-light-3: #f8f8f8;
+  --el-color-primary-light-5: #cccccc;
+  --el-color-primary-light-7: #e5e5e5;
+  --el-color-primary-light-8: #f0f0f0;
+  --el-color-primary-light-9: #f8f8f8;
+  --el-text-color-primary: #333333;
+  --el-text-color-regular: #666666;
+  --el-text-color-secondary: #999999;
+  --el-text-color-placeholder: #cccccc;
+  --el-border-color: #e5e5e5;
+  --el-border-color-light: #f0f0f0;
+  --el-border-color-lighter: #f8f8f8;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f8f8f8;
+
   .el-pager {
     li {
-      min-width: 32px;
-      height: 32px;
-      line-height: 30px;
-      border: 1px solid #dcdfe6;
-      border-radius: 6px;
-      margin: 0 4px;
-      font-size: 14px;
-      font-weight: 400;
-      color: #606266;
-      background-color: #fff;
-      transition: all 0.2s ease;
-      cursor: pointer;
+      min-width: 32px !important;
+      height: 32px !important;
+      line-height: 30px !important;
+      border: 1px solid #e5e5e5 !important;
+      border-radius: 6px !important;
+      margin: 0 4px !important;
+      font-size: 14px !important;
+      font-weight: 400 !important;
+      color: #666666 !important;
+      background-color: #ffffff !important;
+      transition: all 0.2s ease !important;
 
       &:hover {
-        color: #409eff;
-        border-color: #c6e2ff;
-        background-color: #ecf5ff;
+        color: #333333 !important;
+        border-color: #cccccc !important;
+        background-color: #f8f8f8 !important;
       }
 
       &.is-active {
-        color: #fff;
-        background-color: #409eff;
-        border-color: #409eff;
-        font-weight: 500;
+        color: #ffffff !important;
+        background-color: #333333 !important;
+        border-color: #333333 !important;
+        font-weight: 500 !important;
       }
 
       &.more {
-        border: none;
-        background: transparent;
-        color: #c0c4cc;
+        border: none !important;
+        background: transparent !important;
+        color: #999999 !important;
 
         &:hover {
-          color: #409eff;
-          background: transparent;
+          color: #666666 !important;
+          background: transparent !important;
         }
       }
     }
@@ -782,47 +803,40 @@ const closeNotice = () => {
 
   .btn-prev,
   .btn-next {
-    min-width: 32px;
-    height: 32px;
-    line-height: 30px;
-    border: 1px solid #dcdfe6;
-    border-radius: 6px;
-    margin: 0 4px;
-    color: #606266;
-    background-color: #fff;
-    transition: all 0.2s ease;
-    cursor: pointer;
+    min-width: 32px !important;
+    height: 32px !important;
+    line-height: 30px !important;
+    border: 1px solid #e5e5e5 !important;
+    border-radius: 6px !important;
+    margin: 0 4px !important;
+    color: #666666 !important;
+    background-color: #ffffff !important;
+    transition: all 0.2s ease !important;
 
-    &:hover {
-      color: #409eff;
-      border-color: #c6e2ff;
-      background-color: #ecf5ff;
+    &:hover:not(:disabled) {
+      color: #333333 !important;
+      border-color: #cccccc !important;
+      background-color: #f8f8f8 !important;
     }
 
     &:disabled {
-      color: #c0c4cc;
-      background-color: #fff;
-      border-color: #e4e7ed;
-      cursor: not-allowed;
-
-      &:hover {
-        color: #c0c4cc;
-        background-color: #fff;
-        border-color: #e4e7ed;
-      }
+      color: #cccccc !important;
+      background-color: #ffffff !important;
+      border-color: #f0f0f0 !important;
+      cursor: not-allowed !important;
     }
 
     .el-icon {
-      font-size: 12px;
-      font-weight: 500;
+      font-size: 12px !important;
+      font-weight: 500 !important;
     }
   }
 
   .el-pagination__total {
-    color: #909399;
-    font-size: 13px;
-    font-weight: 400;
-    margin-right: 16px;
+    color: #666666 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    margin-right: 16px !important;
   }
 
   // 移动端适配
@@ -830,16 +844,16 @@ const closeNotice = () => {
     .el-pager li,
     .btn-prev,
     .btn-next {
-      min-width: 28px;
-      height: 28px;
-      line-height: 26px;
-      font-size: 12px;
-      margin: 0 2px;
+      min-width: 28px !important;
+      height: 28px !important;
+      line-height: 26px !important;
+      font-size: 12px !important;
+      margin: 0 2px !important;
     }
 
     .el-pagination__total {
-      font-size: 12px;
-      margin-right: 8px;
+      font-size: 12px !important;
+      margin-right: 8px !important;
     }
   }
 }
@@ -847,8 +861,8 @@ const closeNotice = () => {
 // 移动端分页容器
 .main-container.mobile {
   .pagination-container {
-    padding: 1rem 0.5rem;
-    margin-top: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    margin-top: 0.2rem;
   }
 }
 

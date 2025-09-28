@@ -1,0 +1,57 @@
+/* 分页组件黑白灰主题覆盖样式 */
+:root {
+  --el-color-primary: #333333;
+  --el-color-primary-light-3: #f8f8f8;
+  --el-color-primary-light-5: #cccccc;
+  --el-color-primary-light-7: #e5e5e5;
+  --el-color-primary-light-8: #f0f0f0;
+  --el-color-primary-light-9: #f8f8f8;
+}
+
+/* 分页组件专用样式 */
+.pagination-container .el-pagination {
+  --el-color-primary: #333333;
+}
+
+.pagination-container .el-pagination .el-pager li {
+  color: #666666 !important;
+  background-color: #ffffff !important;
+  border: 1px solid #e5e5e5 !important;
+}
+
+.pagination-container .el-pagination .el-pager li:hover {
+  color: #333333 !important;
+  background-color: #f8f8f8 !important;
+  border-color: #cccccc !important;
+}
+
+.pagination-container .el-pagination .el-pager li.is-active {
+  color: #ffffff !important;
+  background-color: #333333 !important;
+  border-color: #333333 !important;
+}
+
+.pagination-container .el-pagination .btn-prev,
+.pagination-container .el-pagination .btn-next {
+  color: #666666 !important;
+  background-color: #ffffff !important;
+  border: 1px solid #e5e5e5 !important;
+}
+
+.pagination-container .el-pagination .btn-prev:hover:not(:disabled),
+.pagination-container .el-pagination .btn-next:hover:not(:disabled) {
+  color: #333333 !important;
+  background-color: #f8f8f8 !important;
+  border-color: #cccccc !important;
+}
+
+.pagination-container .el-pagination .btn-prev:disabled,
+.pagination-container .el-pagination .btn-next:disabled {
+  color: #cccccc !important;
+  background-color: #ffffff !important;
+  border-color: #f0f0f0 !important;
+}
+
+.pagination-container .el-pagination .el-pagination__total {
+  color: #666666 !important;
+}
