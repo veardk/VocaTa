@@ -271,6 +271,17 @@ public class CharacterCreateRequest {
         this.isPrivate = isPrivate;
     }
 
+    // 为了兼容前端发送isPublic字段，添加isPublic的getter和setter
+    public Boolean getIsPublic() {
+        return isPrivate != null ? !isPrivate : null;
+    }
+
+    public void setIsPublic(Boolean isPublic) {
+        if (isPublic != null) {
+            this.isPrivate = !isPublic;
+        }
+    }
+
     // ========== 新增字段的getter和setter方法 ==========
 
     public Long[] getTagIds() {
