@@ -65,6 +65,7 @@ export class VocaTaWebSocketClient {
   private reconnectAttempts = 0
   private readonly maxReconnectAttempts = 5
   private callbacks: Map<string, Function[]> = new Map()
+  private manualClose = false
 
   constructor(conversationUuid: string) {
     this.conversationUuid = conversationUuid
@@ -85,7 +86,9 @@ export class VocaTaWebSocketClient {
     console.log('🔐 使用Token:', token.substring(0, 20) + '...')
 
     try {
+      this.manualClose = false
       this.ws = new WebSocket(wsUrl)
+      this.ws.binaryType = 'arraybuffer'
       this.setupEventHandlers()
     } catch (error) {
       console.error('❌ WebSocket连接创建失败:', error)
@@ -140,7 +143,13 @@ export class VocaTaWebSocketClient {
     this.ws.onclose = (event) => {
       console.log(`🔌 WebSocket连接关闭: code=${event.code}, reason="${event.reason}", wasClean=${event.wasClean}`)
       this.emit('disconnected', event)
-      this.attemptReconnect()
+      const shouldReconnect = !this.manualClose
+      this.ws = null
+      if (shouldReconnect) {
+        this.attemptReconnect()
+      } else {
+        this.reconnectAttempts = 0
+      }
     }
 
     this.ws.onerror = (error) => {
@@ -176,27 +185,25 @@ export class VocaTaWebSocketClient {
 
   // 音频录制控制
   startAudioRecording(): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return
-    }
-    console.log('🎤 发送开始录音信号')
-    this.ws.send(JSON.stringify({ type: 'audio_start' }))
+    this.sendControlMessage('audio_start')
   }
 
   stopAudioRecording(): void {
+    this.sendControlMessage('audio_end')
+  }
+
+  sendControlMessage(type: string, payload: Record<string, unknown> = {}): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return
     }
-    console.log('⏹️ 发送停止录音信号')
-    this.ws.send(JSON.stringify({ type: 'audio_end' }))
+    const message = { type, ...payload }
+    console.log(`📡 发送控制指令:`, message)
+    this.ws.send(JSON.stringify(message))
   }
 
   // 发送心跳
   sendPing(): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return
-    }
-    this.ws.send(JSON.stringify({ type: 'ping' }))
+    this.sendControlMessage('ping')
   }
 
   // 事件监听器
@@ -232,8 +239,12 @@ export class VocaTaWebSocketClient {
 
   disconnect(): void {
     if (this.ws) {
-      this.ws.close()
-      this.ws = null
+      this.manualClose = true
+      try {
+        this.ws.close(1000, 'client_closed')
+      } finally {
+        this.ws = null
+      }
     }
   }
 
@@ -604,6 +615,7 @@ export class VocaTaAIChat {
   private isAudioCallActive = false
   private currentConversation: any = null
   private currentCharacter: any = null
+  private conversationUuid: string | null = null
 
   // 临时消息存储，用于流式显示
   private currentLLMResponse = ''
@@ -632,6 +644,7 @@ export class VocaTaAIChat {
 
       // 建立WebSocket连接并等待连接成功
       await this.connectWebSocket(conversationUuid)
+      this.conversationUuid = conversationUuid
 
       console.log('✅ AI对话系统初始化完成')
     } catch (error) {
@@ -806,6 +819,7 @@ export class VocaTaAIChat {
     try {
       console.log('📞 开始批量录音')
 
+      await this.ensureWebSocketConnection()
       await this.audioManager.startRecording(this.wsClient!)
       this.wsClient?.startAudioRecording()
 
@@ -833,6 +847,7 @@ export class VocaTaAIChat {
 
   // 兼容旧的音频通话方法
   async startAudioCall(): Promise<void> {
+    await this.ensureWebSocketConnection()
     if (!this.wsClient || !this.wsClient.isConnected) {
       throw new Error('WebSocket未连接，无法启动音频通话')
     }
@@ -852,6 +867,19 @@ export class VocaTaAIChat {
     this.isAudioCallActive = false
     this.audioManager.clearQueue()
     this.onAudioPlayCallback?.(false)
+
+    if (this.wsClient) {
+      const client = this.wsClient
+      if (client.isConnected) {
+        client.sendControlMessage('audio_cancel')
+        setTimeout(() => {
+          client.disconnect()
+        }, 100)
+      } else {
+        client.disconnect()
+      }
+      this.wsClient = null
+    }
   }
 
   // 设置回调函数
@@ -913,5 +941,17 @@ export class VocaTaAIChat {
     this.onLLMStreamCallback = undefined
     this.onAudioPlayCallback = undefined
     this.onConnectionStatusCallback = undefined
+  }
+
+  private async ensureWebSocketConnection(): Promise<void> {
+    if (this.wsClient && this.wsClient.isConnected) {
+      return
+    }
+
+    if (!this.conversationUuid) {
+      throw new Error('缺少会话标识，无法建立语音连接')
+    }
+
+    await this.connectWebSocket(this.conversationUuid)
   }
 }

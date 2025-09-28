@@ -105,7 +105,7 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             String type = (String) data.get("type");
             String sessionId = session.getId();
 
-            if ("audio_start".equals(type) || "audio_end".equals(type) || "ping".equals(type)) {
+            if ("audio_start".equals(type) || "audio_end".equals(type) || "audio_cancel".equals(type) || "ping".equals(type)) {
                 logger.debug("收到控制指令: {}, 会话ID: {}", type, sessionId);
             } else {
                 logger.info("解析消息类型: {}, 会话ID: {}", type, sessionId);
@@ -117,6 +117,9 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                     break;
                 case "audio_end":
                     handleAudioEnd(session, data);
+                    break;
+                case "audio_cancel":
+                    handleAudioCancel(session);
                     break;
                 case "text_message":
                     handleTextInput(session, data);
@@ -259,6 +262,20 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
         }
     }
 
+    private void handleAudioCancel(WebSocketSession session) throws IOException {
+        String sessionId = session.getId();
+        logger.info("取消音频录制: {}", sessionId);
+
+        Sinks.Many<byte[]> audioSink = audioSinks.remove(sessionId);
+        if (audioSink != null) {
+            audioSink.tryEmitComplete();
+        }
+
+        if (session.isOpen()) {
+            sendStatusMessage(session, "录音已取消");
+        }
+    }
+
     /**
      * 发送STT识别结果（从payload中提取）
      */
@@ -318,8 +335,8 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
             logger.info("【TTS输出】发送音频元数据: {}", audioMetaJson);
             session.sendMessage(new TextMessage(audioMetaJson));
 
-            // 检查音频数据大小，如果超过50KB则分片传输
-            final int MAX_CHUNK_SIZE = 50 * 1024; // 50KB每片，留有余量
+            // 检查音频数据大小，如果超过32KB则分片传输，避免客户端因单帧过大触发协议错误
+            final int MAX_CHUNK_SIZE = 32 * 1024; // 32KB每片，更好的兼容性
 
             if (audioData.length <= MAX_CHUNK_SIZE) {
                 // 小于50KB，直接发送二进制消息

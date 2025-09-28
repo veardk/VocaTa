@@ -55,5 +55,13 @@ export const roleApi = {
       url: `/api/open/character/${id}`,
       method: 'get'
     })
+  },
+  // AI生成角色提示词
+  aiGenerate(data: { name: string; description: string; greeting: string }) {
+    return request({
+      url: '/api/client/character/ai-generate',
+      method: 'post',
+      data
+    })
   }
 }

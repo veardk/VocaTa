@@ -41,7 +41,17 @@
       </span>
 
       <span class="form-label"> Prompt提示词</span>
-      <textarea placeholder="你的角色提示词" class="form-textarea" rows="4"></textarea>
+      <div class="prompt-container">
+        <textarea
+          placeholder="你的角色提示词"
+          v-model="form.persona"
+          class="form-textarea"
+          rows="4"
+        ></textarea>
+        <div class="generate-btn" @click="generatePrompt" :disabled="isGenerating">
+          {{ isGenerating ? '生成中...' : 'AI生成' }}
+        </div>
+      </div>
       <div class="newBtn" type="primary" @click="createRole">创建</div>
     </el-form>
   </div>
@@ -62,6 +72,8 @@ const isM = computed(() => isMobile())
 const baseUrl = import.meta.env.VITE_APP_URL
 // 头像相关
 const imageUrl = ref('')
+// AI生成状态
+const isGenerating = ref(false)
 // 表单数据
 const form = ref({
   name: '',
@@ -98,6 +110,47 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
     return false
   }
   return true
+}
+
+// AI生成角色提示词
+const generatePrompt = async () => {
+  // 检查必填字段
+  if (!form.value.name.trim()) {
+    ElMessage.error('请先填写角色名称')
+    return
+  }
+  if (!form.value.description.trim()) {
+    ElMessage.error('请先填写角色描述')
+    return
+  }
+  if (!form.value.greeting.trim()) {
+    ElMessage.error('请先填写开场白')
+    return
+  }
+
+  try {
+    isGenerating.value = true
+    ElMessage.info('正在生成角色提示词，请稍候...')
+
+    const res = await roleApi.aiGenerate({
+      name: form.value.name,
+      description: form.value.description,
+      greeting: form.value.greeting
+    })
+
+    if (res.code === 200) {
+      // 将生成的persona填充到form中
+      form.value.persona = res.data.persona
+      ElMessage.success('AI生成完成！')
+    } else {
+      ElMessage.error(res.message || 'AI生成失败，请重试')
+    }
+  } catch (error) {
+    console.error('AI生成出错:', error)
+    ElMessage.error('AI生成出错，请检查网络连接后重试')
+  } finally {
+    isGenerating.value = false
+  }
 }
 
 // 创建角色
@@ -275,6 +328,40 @@ const startConversation = async (characterId: string | number) => {
     content: '*';
     color: red;
     margin-right: 0.05rem;
+  }
+}
+
+.prompt-container {
+  width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.generate-btn {
+  align-self: flex-end;
+  padding: 0.08rem 0.2rem;
+  font-size: 0.18rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 0.08rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0.04rem 0.15rem rgba(102, 126, 234, 0.4);
+
+  &:hover:not([disabled]) {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    box-shadow: 0 0.06rem 0.2rem rgba(102, 126, 234, 0.6);
+    transform: translateY(-0.02rem);
+  }
+
+  &[disabled] {
+    background: linear-gradient(135deg, #cccccc 0%, #999999 100%);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
   }
 }
 </style>
