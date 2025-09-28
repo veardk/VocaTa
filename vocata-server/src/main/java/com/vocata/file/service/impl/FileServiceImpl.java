@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 文件服务实现
@@ -57,6 +58,15 @@ public class FileServiceImpl implements FileService {
      * 文件大小限制（5MB）
      */
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+    /**
+     * 允许的音频Content-Type
+     */
+    private static final List<String> ALLOWED_AUDIO_TYPES = Arrays.asList(
+            "audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp3", "audio/aac",
+            "audio/m4a", "audio/flac", "audio/ogg", "audio/webm", "audio/webm;codecs=opus",
+            "audio/webm; codecs=opus"
+    );
 
     @Override
     public FileUploadResponse uploadFile(MultipartFile file, String fileType) {
@@ -226,9 +236,14 @@ public class FileServiceImpl implements FileService {
         }
 
         // 检查内容类型 (支持常见音频格式)
-        if (StringUtils.isBlank(contentType)) {
+        if (StringUtils.isNotBlank(contentType)) {
+            String lowerContentType = contentType.toLowerCase(Locale.ROOT);
+            if (!ALLOWED_AUDIO_TYPES.contains(lowerContentType) && !lowerContentType.startsWith("audio/")) {
+                throw new BizException(ApiCode.FILE_TYPE_NOT_ALLOWED);
+            }
+        } else {
             // 如果没有提供contentType，根据文件扩展名推断
-            String extension = getFileExtension(fileName).toLowerCase();
+            String extension = getFileExtension(fileName).toLowerCase(Locale.ROOT);
             if (!isAllowedAudioExtension(extension)) {
                 throw new BizException(ApiCode.FILE_TYPE_NOT_ALLOWED);
             }
@@ -239,7 +254,7 @@ public class FileServiceImpl implements FileService {
      * 检查是否为允许的音频扩展名
      */
     private boolean isAllowedAudioExtension(String extension) {
-        List<String> allowedExtensions = Arrays.asList(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac");
+        List<String> allowedExtensions = Arrays.asList(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm");
         return allowedExtensions.contains(extension);
     }
 

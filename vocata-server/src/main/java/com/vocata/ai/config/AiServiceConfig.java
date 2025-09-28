@@ -26,7 +26,7 @@ public class AiServiceConfig {
     @Value("${ai.llm.provider:qiniu}")
     private String preferredProvider;
 
-    @Value("${ai.stt.provider:xunfei}")
+    @Value("${ai.stt.provider:qiniu}")
     private String preferredSttProvider;
 
     @Value("${ai.tts.provider:volcan}")

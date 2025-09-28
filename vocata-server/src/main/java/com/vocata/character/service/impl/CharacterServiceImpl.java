@@ -8,11 +8,13 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vocata.character.entity.Character;
 import com.vocata.character.mapper.CharacterMapper;
 import com.vocata.character.service.CharacterService;
+import com.vocata.character.service.CharacterChatCountService;
 import com.vocata.common.constant.CharacterStatus;
 import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.common.utils.UserContext;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -28,12 +30,24 @@ import java.util.stream.Collectors;
 @Service
 public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character> implements CharacterService {
 
+    @Autowired
+    private CharacterChatCountService characterChatCountService;
+
     @Override
     public Character getById(Long id) {
         if (id == null) {
             throw new BizException(ApiCode.PARAM_ERROR);
         }
-        return super.getById(id);
+        Character character = super.getById(id);
+        if (character != null) {
+            // 从Redis获取最新的聊天计数
+            Long chatCount = characterChatCountService.getChatCount(id);
+            Long todayChatCount = characterChatCountService.getTodayChatCount(id);
+
+            character.setChatCount(chatCount);
+            character.setChatCountToday(todayChatCount != null ? todayChatCount.intValue() : 0);
+        }
+        return character;
     }
 
     @Override
@@ -42,9 +56,19 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
             throw new BizException(ApiCode.PARAM_ERROR);
         }
 
-        return this.getOne(new LambdaQueryWrapper<Character>()
+        Character character = this.getOne(new LambdaQueryWrapper<Character>()
                 .eq(Character::getCharacterCode, characterCode)
                 .eq(Character::getStatus, CharacterStatus.PUBLISHED));
+
+        if (character != null) {
+            // 从Redis获取最新的聊天计数
+            Long chatCount = characterChatCountService.getChatCount(character.getId());
+            Long todayChatCount = characterChatCountService.getTodayChatCount(character.getId());
+
+            character.setChatCount(chatCount);
+            character.setChatCountToday(todayChatCount != null ? todayChatCount.intValue() : 0);
+        }
+        return character;
     }
 
     @Override

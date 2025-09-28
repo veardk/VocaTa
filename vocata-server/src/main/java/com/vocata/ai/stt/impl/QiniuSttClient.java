@@ -2,24 +2,25 @@ package com.vocata.ai.stt.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vocata.ai.stt.SttClient;
+import com.vocata.file.service.FileService;
+import com.vocata.file.dto.FileUploadResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Base64;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,9 @@ public class QiniuSttClient implements SttClient {
 
     @Value("${qiniu.stt.model:asr}")
     private String defaultModel;
+
+    @Autowired
+    private FileService fileService;
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -172,15 +176,83 @@ public class QiniuSttClient implements SttClient {
     }
 
     /**
-     * 调用七牛云ASR API
+     * 调用七牛云ASR API - 修正版
      */
     private Mono<Map<String, Object>> callQiniuAsrApi(byte[] audioData, SttClient.SttConfig config) {
-        try {
-            // 构建请求体
-            Map<String, Object> requestBody = buildRequestBody(audioData, config);
-            String requestBodyJson = objectMapper.writeValueAsString(requestBody);
+        return uploadAudioToQiniu(audioData, config)
+            .flatMap(context -> invokeVoiceAsrApi(context, config)
+                .onErrorResume(throwable -> handleAsrFallback("/voice/asr", throwable, context, config))
+            )
+            .onErrorResume(throwable -> {
+                if (throwable instanceof WebClientResponseException responseException) {
+                    logger.error("七牛云ASR接口调用失败，状态码: {}, 响应体: {}",
+                            responseException.getStatusCode(), responseException.getResponseBodyAsString());
+                } else {
+                    logger.error("七牛云ASR接口调用失败: {}", throwable.getMessage(), throwable);
+                }
+                return Mono.error(throwable);
+            });
+    }
 
-            // 构建认证头
+    /**
+     * 构建请求体 - 修正版：先上传音频到七牛云存储，再调用ASR API
+     */
+    private Mono<UploadedAudioContext> uploadAudioToQiniu(byte[] audioData, SttClient.SttConfig config) {
+        try {
+            // 音频格式
+            String format = mapAudioFormat(config.getAudioFormat());
+
+            // 生成临时文件名
+            String fileName = "stt_" + System.currentTimeMillis() + "." + format;
+
+            // 创建MultipartFile（保留以兼容其他调用场景）
+            MultipartFile audioFile = new InMemoryMultipartFile(
+                "audio",
+                fileName,
+                "audio/" + format,
+                audioData
+            );
+
+            logger.info("开始上传音频文件到七牛云存储: {} bytes, 格式: {}", audioData.length, format);
+
+            // 上传音频文件到七牛云存储
+            return Mono.fromCallable(() -> {
+                FileUploadResponse uploadResponse = fileService.uploadAudioFile(
+                    audioData,
+                    audioFile.getOriginalFilename(),
+                    "audio",
+                    audioFile.getContentType()
+                );
+                logger.info("音频文件上传成功，URL: {}", uploadResponse.getFileUrl());
+                return new UploadedAudioContext(format, uploadResponse.getFileUrl());
+            })
+            .onErrorMap(e -> {
+                logger.error("上传音频文件失败", e);
+                return new RuntimeException("上传音频文件到七牛云存储失败: " + e.getMessage(), e);
+            });
+
+        } catch (Exception e) {
+            logger.error("构建请求体失败", e);
+            return Mono.error(new RuntimeException("构建七牛云ASR请求失败", e));
+        }
+    }
+
+    private Mono<Map<String, Object>> invokeVoiceAsrApi(UploadedAudioContext context, SttClient.SttConfig config) {
+        try {
+            Map<String, Object> request = new HashMap<>();
+            String model = getModelForLanguage(config.getLanguage());
+            request.put("model", model);
+
+            if (StringUtils.hasText(config.getLanguage())) {
+                request.put("language", config.getLanguage());
+            }
+
+            Map<String, Object> audio = new HashMap<>();
+            audio.put("format", context.format());
+            audio.put("url", context.audioUrl());
+            request.put("audio", audio);
+
+            String requestBodyJson = objectMapper.writeValueAsString(request);
             String path = "/voice/asr";
             Map<String, String> headers = buildAuthHeaders("POST", path, requestBodyJson);
 
@@ -190,52 +262,114 @@ public class QiniuSttClient implements SttClient {
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
                     .headers(httpHeaders -> headers.forEach(httpHeaders::set))
-                    .bodyValue(requestBody)
+                    .bodyValue(request)
                     .retrieve()
                     .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                    .doOnNext(response -> logger.debug("七牛云ASR API响应: {}", response))
-                    .doOnError(error -> logger.error("七牛云ASR API调用失败: {}", error.getMessage()));
-
+                    .doOnNext(response -> logger.info("七牛云ASR(voice/asr)响应: {}", response));
         } catch (Exception e) {
-            return Mono.error(new RuntimeException("构建七牛云ASR API请求失败", e));
+            return Mono.error(new RuntimeException("构建七牛云voice/asr请求失败", e));
         }
     }
 
-    /**
-     * 构建请求体 (根据七牛云语音识别API文档)
-     * 七牛云ASR API需要音频文件的URL，不是直接的base64数据
-     */
-    private Map<String, Object> buildRequestBody(byte[] audioData, SttClient.SttConfig config) {
-        Map<String, Object> request = new HashMap<>();
+    private Mono<Map<String, Object>> invokeOpenAiStyleApi(UploadedAudioContext context, SttClient.SttConfig config) {
+        try {
+            Map<String, Object> request = new HashMap<>();
+            String model = getModelForLanguage(config.getLanguage());
+            request.put("model", model);
 
-        // 模型
-        String model = getModelForLanguage(config.getLanguage());
-        request.put("model", model);
+            if (StringUtils.hasText(config.getLanguage())) {
+                request.put("language", config.getLanguage());
+            }
 
-        // 音频数据结构
-        Map<String, Object> audio = new HashMap<>();
+            Map<String, Object> inputAudioWrapper = new HashMap<>();
+            inputAudioWrapper.put("type", "input_audio");
 
-        // 音频格式
-        String format = mapAudioFormat(config.getAudioFormat());
-        audio.put("format", format);
+            Map<String, Object> inputAudio = new HashMap<>();
+            inputAudio.put("url", context.audioUrl());
+            inputAudio.put("format", context.format());
+            inputAudioWrapper.put("input_audio", inputAudio);
 
-        // 七牛云ASR API要求提供音频文件的URL
-        // 由于我们有音频数据但没有URL，我们需要：
-        // 1. 将音频数据上传到七牛云存储
-        // 2. 获取可访问的URL
-        // 3. 使用该URL调用ASR API
+            request.put("input_audio", List.of(inputAudioWrapper));
+            request.put("response_format", "verbose_json");
 
-        // 暂时使用base64数据URL作为兼容方案
-        String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        String dataUrl = "data:audio/" + format + ";base64," + base64Audio;
-        audio.put("url", dataUrl);
+            String requestBodyJson = objectMapper.writeValueAsString(request);
+            String path = "/audio/transcriptions";
+            Map<String, String> headers = buildAuthHeaders("POST", path, requestBodyJson);
 
-        request.put("audio", audio);
+            String url = endpoint + path;
 
-        logger.debug("七牛云ASR请求体: model={}, format={}, 数据大小: {} bytes", model, format, audioData.length);
-
-        return request;
+            return webClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .headers(httpHeaders -> headers.forEach(httpHeaders::set))
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                    .doOnNext(response -> logger.info("七牛云ASR(OpenAI兼容)响应: {}", response));
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("构建七牛云OpenAI兼容ASR请求失败", e));
+        }
     }
+
+    private Mono<Map<String, Object>> invokeLegacyAsrApi(UploadedAudioContext context, SttClient.SttConfig config) {
+        try {
+            Map<String, Object> request = new HashMap<>();
+            String model = getModelForLanguage(config.getLanguage());
+            request.put("model", model);
+
+            if (StringUtils.hasText(config.getLanguage())) {
+                request.put("language", config.getLanguage());
+            }
+
+            Map<String, Object> audio = new HashMap<>();
+            audio.put("format", context.format());
+            audio.put("url", context.audioUrl());
+            request.put("audio", audio);
+
+            String requestBodyJson = objectMapper.writeValueAsString(request);
+            String path = "/asr";
+            Map<String, String> headers = buildAuthHeaders("POST", path, requestBodyJson);
+            String url = endpoint + path;
+
+            return webClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .headers(httpHeaders -> headers.forEach(httpHeaders::set))
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                    .doOnNext(response -> logger.info("七牛云ASR(传统接口)响应: {}", response));
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("构建七牛云传统ASR请求失败", e));
+        }
+    }
+
+    private Mono<Map<String, Object>> handleAsrFallback(String failedPath,
+                                                        Throwable throwable,
+                                                        UploadedAudioContext context,
+                                                        SttClient.SttConfig config) {
+        if (throwable instanceof WebClientResponseException responseException) {
+            logger.warn("调用七牛云ASR接口{}失败，状态码: {}, 响应体: {}",
+                    failedPath, responseException.getStatusCode(), responseException.getResponseBodyAsString());
+
+            HttpStatusCode statusCode = responseException.getStatusCode();
+            if (statusCode.isSameCodeAs(HttpStatus.NOT_FOUND) || statusCode.isSameCodeAs(HttpStatus.METHOD_NOT_ALLOWED)) {
+                if ("/voice/asr".equals(failedPath)) {
+                    logger.info("尝试回退到七牛云传统ASR接口 /asr");
+                    return invokeLegacyAsrApi(context, config)
+                            .onErrorResume(inner -> handleAsrFallback("/asr", inner, context, config));
+                }
+
+                if ("/asr".equals(failedPath)) {
+                    logger.info("尝试回退到七牛云OpenAI兼容ASR接口 /audio/transcriptions");
+                    return invokeOpenAiStyleApi(context, config);
+                }
+            }
+        }
+        return Mono.error(throwable);
+    }
+
+    private record UploadedAudioContext(String format, String audioUrl) {}
 
     /**
      * 根据语言获取模型
@@ -307,81 +441,51 @@ public class QiniuSttClient implements SttClient {
     }
 
     /**
-     * 解析ASR响应
+     * 解析ASR响应 - 根据七牛云官方文档修正
      */
     private SttClient.SttResult parseAsrResponse(Map<String, Object> response, SttClient.SttConfig config) {
         SttClient.SttResult result = new SttClient.SttResult();
 
         try {
-            // 检查响应状态
-            Object codeObj = response.get("code");
-            Integer code = null;
-            if (codeObj instanceof Integer) {
-                code = (Integer) codeObj;
-            } else if (codeObj instanceof String) {
-                try {
-                    code = Integer.parseInt((String) codeObj);
-                } catch (NumberFormatException e) {
-                    logger.warn("无法解析响应code: {}", codeObj);
-                }
-            }
+            logger.info("解析七牛云ASR响应: {}", response);
 
-            if (code != null && code == 200) {
-                // 成功响应
+            // 检查是否有错误
+            if (response.containsKey("error")) {
+                String errorMessage = (String) response.get("error");
+                result.setText("识别失败: " + errorMessage);
+                result.setConfidence(0.0);
+                logger.error("七牛云ASR API错误: {}", errorMessage);
+            } else if (response.containsKey("data")) {
+                // 成功响应 - 根据官方文档格式
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) response.get("data");
-                if (data != null) {
-                    // 提取识别结果
-                    Object textObj = data.get("result");
-                    if (textObj instanceof String) {
-                        String text = (String) textObj;
+
+                if (data != null && data.containsKey("result")) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> resultData = (Map<String, Object>) data.get("result");
+
+                    if (resultData != null && resultData.containsKey("text")) {
+                        String text = (String) resultData.get("text");
                         result.setText(StringUtils.hasText(text) ? text : "");
                         result.setConfidence(0.95); // 七牛云默认高置信度
-                    } else if (textObj instanceof List) {
-                        // 如果结果是数组格式
-                        @SuppressWarnings("unchecked")
-                        List<Object> resultList = (List<Object>) textObj;
-                        if (!resultList.isEmpty()) {
-                            StringBuilder textBuilder = new StringBuilder();
-                            for (Object item : resultList) {
-                                if (item instanceof String) {
-                                    textBuilder.append(item).append(" ");
-                                } else if (item instanceof Map) {
-                                    @SuppressWarnings("unchecked")
-                                    Map<String, Object> itemMap = (Map<String, Object>) item;
-                                    Object itemText = itemMap.get("text");
-                                    if (itemText instanceof String) {
-                                        textBuilder.append(itemText).append(" ");
-                                    }
-                                }
-                            }
-                            result.setText(textBuilder.toString().trim());
-                            result.setConfidence(0.95);
-                        } else {
-                            result.setText("");
-                            result.setConfidence(0.0);
-                        }
+                        logger.info("七牛云ASR识别成功: '{}'", text);
                     } else {
                         result.setText("");
                         result.setConfidence(0.0);
-                    }
-
-                    // 提取置信度（如果API返回）
-                    Object confidenceObj = data.get("confidence");
-                    if (confidenceObj instanceof Number) {
-                        result.setConfidence(((Number) confidenceObj).doubleValue());
+                        logger.warn("七牛云ASR响应中没有找到text字段");
                     }
                 } else {
-                    result.setText("识别结果为空");
+                    result.setText("");
                     result.setConfidence(0.0);
+                    logger.warn("七牛云ASR响应中没有找到result字段");
                 }
             } else {
-                // 错误响应
-                String message = (String) response.get("message");
-                result.setText("识别失败: " + (message != null ? message : "未知错误"));
+                // 处理其他可能的响应格式
+                result.setText("无法解析识别结果");
                 result.setConfidence(0.0);
-                logger.error("七牛云ASR API错误: code={}, message={}", code, message);
+                logger.warn("七牛云ASR响应格式不匹配: {}", response);
             }
+
         } catch (Exception e) {
             logger.error("解析七牛云ASR响应失败", e);
             result.setText("解析识别结果失败");
@@ -395,6 +499,7 @@ public class QiniuSttClient implements SttClient {
         metadata.put("provider", "QiniuSTT");
         metadata.put("model", getModelForLanguage(config.getLanguage()));
         metadata.put("language", config.getLanguage());
+        metadata.put("endpoint", endpoint);
         result.setMetadata(metadata);
 
         logger.info("七牛云ASR识别完成: 文本长度={}, 置信度={}",

@@ -10,6 +10,7 @@ import com.vocata.ai.stt.SttClient;
 import com.vocata.ai.tts.TtsClient;
 import com.vocata.character.entity.Character;
 import com.vocata.character.mapper.CharacterMapper;
+import com.vocata.character.service.CharacterChatCountService;
 import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.conversation.constants.ContentType;
@@ -68,6 +69,9 @@ public class AiStreamingService {
     private CharacterMapper characterMapper;
 
     @Autowired
+    private CharacterChatCountService characterChatCountService;
+
+    @Autowired
     private FileService fileService;
 
     /**
@@ -122,24 +126,40 @@ public class AiStreamingService {
         // 第一步：STT语音识别
         SttClient.SttConfig sttConfig = new SttClient.SttConfig(character.getLanguage());
 
-        return sttClient.streamRecognize(audioStream, sttConfig)
-                .filter(sttResult -> sttResult.getText() != null && !sttResult.getText().trim().isEmpty())
+        // 共享同一条STT识别流，避免对单播音频流重复订阅
+        Flux<SttClient.SttResult> sttFlux = sttClient.streamRecognize(audioStream, sttConfig)
+                .replay()
+                .autoConnect(1);
+
+        Flux<AiStreamingResponse> streamingStt = sttFlux
+                .filter(this::isValidSttResult)
                 .doOnNext(sttResult -> logger.debug("STT识别: {}", sttResult.getText()))
                 .map(sttResult -> {
-                    // 发送STT结果
                     AiStreamingResponse response = new AiStreamingResponse();
                     response.setType(AiStreamingResponse.ResponseType.STT_RESULT);
                     response.setSttResult(sttResult);
                     return response;
-                })
-                .concatWith(
-                    // 第二步：收集完整的STT结果并调用LLM
-                    sttClient.streamRecognize(audioStream, sttConfig)
-                            .filter(SttClient.SttResult::isFinal)
-                            .take(1)
-                            .flatMap(finalSttResult -> processLlmWithTts(conversation, character,
-                                                                       finalSttResult.getText(), userId))
-                );
+                });
+
+        Flux<AiStreamingResponse> llmAndTts = sttFlux
+                .filter(result -> result.isFinal() && isValidSttResult(result))
+                .take(1)
+                .flatMap(finalSttResult -> processLlmWithTts(conversation, character,
+                        finalSttResult.getText(), userId));
+
+        return streamingStt.concatWith(llmAndTts);
+    }
+
+    private boolean isValidSttResult(SttClient.SttResult result) {
+        if (result == null) {
+            return false;
+        }
+        if (result.getMetadata() != null && result.getMetadata().containsKey("error")) {
+            logger.warn("忽略STT错误结果: {}", result.getMetadata().get("error"));
+            return false;
+        }
+        String text = result.getText();
+        return text != null && !text.trim().isEmpty();
     }
 
     /**
@@ -288,6 +308,22 @@ public class AiStreamingService {
             message.setMetadata(metadata);
 
             messageMapper.insert(message);
+
+            // 如果是用户消息，则增加角色聊天计数
+            if (senderType == SenderType.USER) {
+                try {
+                    // 获取对话信息以确定角色ID
+                    Conversation conversation = conversationMapper.selectById(conversationId);
+                    if (conversation != null && conversation.getCharacterId() != null) {
+                        Long newCount = characterChatCountService.incrementChatCount(conversation.getCharacterId());
+                        logger.debug("用户{}与角色{}的聊天计数已增加至: {}", userId, conversation.getCharacterId(), newCount);
+                    }
+                } catch (Exception e) {
+                    logger.error("增加角色聊天计数失败，对话ID: {}, 用户ID: {}", conversationId, userId, e);
+                    // 不影响主流程，继续执行
+                }
+            }
+
             return message;
         });
     }

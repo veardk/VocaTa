@@ -49,6 +49,12 @@ spring:
           max-idle: 8
           min-idle: 0
 
+  # 定时任务配置
+  task:
+    scheduling:
+      pool:
+        size: 10
+
   # 邮件配置
   mail:
     host: smtp.163.com

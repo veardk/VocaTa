@@ -27,7 +27,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
             });
 
             // 公开接口，无需认证
-            SaRouter.match("/api/open/**", "/actuator/health", "/error", "/favicon.ico", "/debug/**",
+            SaRouter.match("/api/open/**", "/api/health", "/actuator/health", "/error", "/favicon.ico", "/debug/**",
                           "/ws/**", "/websocket/**")
                     .stop();
 
