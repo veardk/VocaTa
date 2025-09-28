@@ -171,6 +171,9 @@ public class CharacterChatCountService {
         try {
             List<Character> characters = characterMapper.selectList(null);
             int loadCount = 0;
+            int existCount = 0;
+
+            logger.info("从数据库查询到{}个角色", characters.size());
 
             for (Character character : characters) {
                 if (character.getId() != null) {
@@ -182,11 +185,14 @@ public class CharacterChatCountService {
                         long expireTime = getTotalExpireSeconds() + (long) (Math.random() * getRandomExpireRange());
                         redisTemplate.opsForValue().set(key, chatCount, expireTime, TimeUnit.SECONDS);
                         loadCount++;
+                        logger.debug("为角色{}预热缓存，计数: {}", character.getId(), chatCount);
+                    } else {
+                        existCount++;
                     }
                 }
             }
 
-            logger.info("缓存预热完成，共加载{}个角色的聊天计数", loadCount);
+            logger.info("缓存预热完成，共加载{}个角色的聊天计数，{}个已存在", loadCount, existCount);
         } catch (Exception e) {
             logger.error("缓存预热失败", e);
         }
@@ -204,9 +210,22 @@ public class CharacterChatCountService {
             return 0L;
         }
 
+        logger.info("开始增加角色{}的聊天计数", characterId);
+
         try {
             String key = ChatCountCacheConstants.CHAT_COUNT_PREFIX + characterId;
             String todayKey = ChatCountCacheConstants.CHAT_COUNT_TODAY_PREFIX + characterId + ":" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+            logger.debug("Redis keys: total={}, today={}", key, todayKey);
+
+            // 先检查Redis连接
+            try {
+                redisTemplate.hasKey(key);
+                logger.debug("Redis连接正常");
+            } catch (Exception e) {
+                logger.error("Redis连接失败", e);
+                throw e;
+            }
 
             // 使用Redis管道操作提高性能
             List<Object> results = redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
@@ -217,24 +236,27 @@ public class CharacterChatCountService {
                 return null;
             });
 
+            logger.debug("Pipeline执行结果: {}", results);
+
             // 设置今日计数过期时间（次日凌晨过期）
             redisTemplate.expire(todayKey, Duration.ofHours(25));
 
             Long newCount = (Long) results.get(0);
+            logger.info("角色{}聊天计数增加成功，当前总计数: {}", characterId, newCount);
 
             // 检查缓存是否存在，如果不存在则从数据库加载
             if (newCount == 1) {
+                logger.debug("首次访问角色{}，从数据库加载初始计数", characterId);
                 Long dbCount = getChatCountFromDatabase(characterId);
                 if (dbCount != null && dbCount > 0) {
+                    logger.debug("数据库中角色{}的计数为: {}", characterId, dbCount);
                     redisTemplate.opsForValue().set(key, dbCount + 1,
                         getTotalExpireSeconds() + (long) (Math.random() * getRandomExpireRange()), TimeUnit.SECONDS);
                     newCount = dbCount + 1;
+                    logger.info("角色{}计数已更新为: {}", characterId, newCount);
                 }
             }
 
-            if (isDetailedLoggingEnabled()) {
-                logger.debug("角色{}聊天计数增加，当前计数: {}", characterId, newCount);
-            }
             return newCount;
 
         } catch (Exception e) {

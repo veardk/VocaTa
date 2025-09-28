@@ -253,6 +253,7 @@ export class AudioManager {
   private stopRecordingPromise: Promise<void> | null = null
   private stopRecordingResolve?: () => void
   private stopRecordingReject?: (reason?: any) => void
+  private playbackStateListener?: (isPlaying: boolean) => void
 
   async initialize(): Promise<void> {
     try {
@@ -494,10 +495,12 @@ export class AudioManager {
   private async playQueue(): Promise<void> {
     if (this.audioQueue.length === 0) {
       this.isPlaying = false
+      this.notifyPlaybackState(false)
       return
     }
 
     this.isPlaying = true
+    this.notifyPlaybackState(true)
 
     try {
       // 确保AudioContext已初始化
@@ -523,6 +526,7 @@ export class AudioManager {
   clearQueue(): void {
     this.audioQueue = []
     this.isPlaying = false
+    this.notifyPlaybackState(false)
     console.log('🗑️ 清除音频队列')
   }
 
@@ -563,6 +567,14 @@ export class AudioManager {
   get playing(): boolean {
     return this.isPlaying
   }
+
+  setPlaybackStateListener(listener: (isPlaying: boolean) => void): void {
+    this.playbackStateListener = listener
+  }
+
+  private notifyPlaybackState(isPlaying: boolean): void {
+    this.playbackStateListener?.(isPlaying)
+  }
 }
 
 // 实时AI对话管理器
@@ -586,6 +598,9 @@ export class VocaTaAIChat {
 
   constructor() {
     this.audioManager = new AudioManager()
+    this.audioManager.setPlaybackStateListener(isPlaying => {
+      this.onAudioPlayCallback?.(isPlaying)
+    })
   }
 
   async initialize(conversationUuid: string): Promise<void> {
@@ -734,7 +749,6 @@ export class VocaTaAIChat {
   private handleAudioData(audioBuffer: ArrayBuffer): void {
     console.log(`🔊 播放音频数据: ${audioBuffer.byteLength} bytes`)
     this.audioManager.addToQueue(audioBuffer)
-    this.onAudioPlayCallback?.(true)
   }
 
   private handleProcessComplete(message: CompleteMessage): void {

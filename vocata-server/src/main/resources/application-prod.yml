@@ -22,7 +22,7 @@ spring:
       host: ${REDIS_HOST_PROD}
       port: ${REDIS_PORT_PROD:6379}
       password: ${REDIS_PASSWORD_PROD}
-      database: ${REDIS_DATABASE_PROD:0}
+      database: 0
       timeout: 10000ms
       lettuce:
         pool:
@@ -93,7 +93,7 @@ sa-token:
   token-prefix: Bearer
   # 配置Redis作为Sa-Token的持久层
   alone-redis:
-    database: 1
+    database: 0
 
 # AI服务配置
 ai:

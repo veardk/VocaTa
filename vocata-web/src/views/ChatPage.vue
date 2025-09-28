@@ -14,6 +14,7 @@
             <div class="right">
               <div class="name">{{ getCharacterName() }}</div>
               <div class="content" :class="{ 'streaming': item.isStreaming }">
+                <span class="text-prefix">{{ getCharacterName() }}：</span>
                 <span class="text-content">{{ item.content }}</span>
                 <span v-if="item.isStreaming" class="typing-cursor">|</span>
               </div>
@@ -24,7 +25,8 @@
             <div class="left">
               <div class="name">ME</div>
               <div class="content" :class="{ 'recognizing': item.isRecognizing }">
-                {{ item.content }}
+                <span class="text-prefix">ME：</span>
+                <span class="text-content">{{ item.content }}</span>
                 <span v-if="item.isRecognizing" class="recognition-tip">(识别中...)</span>
               </div>
               <div v-if="item.createDate" class="time">{{ formatTime(item.createDate) }}</div>
@@ -1020,6 +1022,13 @@ const formatTime = (dateString: string) => {
       border: 0.01rem solid #eaeaea;
       margin-top: 0.1rem;
       position: relative;
+      display: inline-flex;
+      align-items: baseline;
+
+      .text-prefix {
+        font-weight: 600;
+        margin-right: 0.04rem;
+      }
 
       // 流式文本显示效果
       &.streaming {
@@ -1071,6 +1080,10 @@ const formatTime = (dateString: string) => {
         background-color: #007bff;
         color: white;
         border-color: #007bff;
+
+        .text-prefix {
+          color: rgba(255, 255, 255, 0.85);
+        }
       }
 
       .time {
