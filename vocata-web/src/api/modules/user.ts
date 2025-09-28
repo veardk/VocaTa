@@ -1,4 +1,4 @@
-import type { LoginParams, RegisterParams, Response, LoginResponse, UserInfo } from '@/types/api'
+import type { LoginParams, RegisterParams, Response, LoginResponse, UserInfo, UpdateUserInfoParams } from '@/types/api'
 import request from '../request'
 
 export const userApi = {
@@ -22,5 +22,10 @@ export const userApi = {
   // 获取用户信息
   getUserInfo(): Promise<Response<UserInfo>> {
     return request.get('/api/client/user/profile')
+  },
+
+  // 更新用户信息
+  updateUserInfo(params: UpdateUserInfoParams): Promise<Response<UserInfo>> {
+    return request.put('/api/client/user/profile', params)
   }
 }

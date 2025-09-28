@@ -44,7 +44,18 @@ export interface UserInfo {
   email: string,
   avatar: string,
   gender: number,
+  phone?: string,
+  birthday?: string,
   createDate: string
+}
+
+// 更新用户信息参数
+export interface UpdateUserInfoParams {
+  nickname?: string,
+  gender?: number,
+  phone?: string,
+  birthday?: string,
+  avatar?: string
 }
 
 // 修改密码参数

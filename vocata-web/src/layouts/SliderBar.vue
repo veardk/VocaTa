@@ -24,7 +24,7 @@
           class="role-btn"
           @click="createNewRole"
           aria-label="新建角色"
-          :class="route.meta.title === '新建角色' ? 'active' : ''"
+:class="route.meta.title === '新建角色' && route.meta.title !== '对话' ? 'active' : ''"
         >
           <div class="role-btn__icon">
             <el-icon><CirclePlusFilled /></el-icon>
@@ -35,7 +35,7 @@
           class="role-btn"
           @click="showRoleGallery"
           aria-label="选择角色"
-          :class="route.meta.title === '探索' ? 'active' : ''"
+:class="route.meta.title === '探索' && route.meta.title !== '对话' ? 'active' : ''"
         >
           <div class="role-btn__icon">
             <el-icon><UserFilled /></el-icon>
@@ -92,23 +92,28 @@
 
             <!-- 操作按钮组 -->
             <div v-if="!sidebarCollapsed" class="history-item-actions" @click.stop>
-              <el-icon
-                @click="startEditTitle(chat.conversationUuid, chat.title || '未命名对话')"
-                class="action-btn rename-btn"
-                title="重命名"
-              >
-                <Edit />
-              </el-icon>
-              <el-popconfirm
-                title="确定要删除该对话吗？"
-                @confirm="deleteChat(chat.conversationUuid, $event)"
-              >
-                <template #reference>
-                  <el-icon class="action-btn delete-btn" title="删除">
-                    <Delete />
-                  </el-icon>
+              <el-dropdown trigger="click" placement="bottom-end" @command="handleChatAction">
+                <el-icon class="action-btn more-btn" title="更多操作">
+                  <MoreFilled />
+                </el-icon>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      :command="{ action: 'rename', chatId: chat.conversationUuid, title: chat.title || '未命名对话' }"
+                    >
+                      <el-icon><Edit /></el-icon>
+                      重命名
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      :command="{ action: 'delete', chatId: chat.conversationUuid }"
+                      divided
+                    >
+                      <el-icon><Delete /></el-icon>
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
                 </template>
-              </el-popconfirm>
+              </el-dropdown>
             </div>
             <!--  <span class="history-time" v-if="!sidebarCollapsed">
               {{ formatTime(chat.lastTime) }}
@@ -158,8 +163,8 @@ import { userApi } from '@/api/modules/user'
 import { conversationApi } from '@/api/modules/conversation'
 import { isMobile } from '@/utils/isMobile'
 import { removeToken } from '@/utils/token'
-import { ElMessage } from 'element-plus'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 // import type { ChatHistoryItem } from '@/types/common'
 import { chatHistoryStore } from '@/store'
@@ -174,7 +179,13 @@ const chatHistory = computed(() => {
   return chatHistoryStore().chatHistory
 })
 const isLoadingHistory = ref(false)
-const activeChatId = ref('')
+const activeChatId = computed(() => {
+  // 如果当前路由路径匹配聊天页面模式，则从路由参数中获取对话ID
+  if (route.path.startsWith('/chat/') && route.params.conversationUuid) {
+    return route.params.conversationUuid as string
+  }
+  return ''
+})
 const userInfo = ref({
   nickname: '用户昵称',
   avatar: 'https://cdn.jsdelivr.net/gh/linhaishe/images/img/202307291610919.png',
@@ -190,6 +201,13 @@ const editingChatId = ref('')
 const editingTitle = ref('')
 
 const userShow = ref(false)
+
+// 调试路由变化和activeChatId
+watch(() => route.path, (newPath) => {
+  console.log('路由变化:', newPath)
+  console.log('路由参数:', route.params)
+  console.log('当前activeChatId:', activeChatId.value)
+}, { immediate: true })
 
 onMounted(() => {
   document.addEventListener('click', handleOutSide)
@@ -212,7 +230,6 @@ const createNewRole = () => {
 }
 const selectChat = (conversationUuid: string) => {
   console.log('selectChat', conversationUuid)
-  activeChatId.value = conversationUuid
   router.push(`/chat/${conversationUuid}`)
 }
 const searchIconHandler = () => {
@@ -267,6 +284,31 @@ const loadChatHistory = async () => {
     ElMessage.error('加载聊天历史失败')
   } finally {
     isLoadingHistory.value = false
+  }
+}
+
+// 处理下拉菜单命令
+const handleChatAction = async (command: { action: string; chatId: string; title?: string }) => {
+  const { action, chatId, title } = command
+
+  if (action === 'rename') {
+    startEditTitle(chatId, title || '未命名对话')
+  } else if (action === 'delete') {
+    try {
+      // 显示确认对话框
+      await ElMessageBox.confirm('确定要删除该对话吗？', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
+      await chatHistoryStore().deleteChatHistory(chatId)
+    } catch (error) {
+      // 用户取消删除或删除失败
+      if (error !== 'cancel') {
+        console.error('删除对话失败:', error)
+        ElMessage.error('删除对话失败')
+      }
+    }
   }
 }
 
@@ -441,6 +483,17 @@ const confirmEditTitle = async (conversationUuid: string) => {
         color: #111827;
       }
 
+      &.active {
+        background-color: #e5e7eb;
+        color: #374151;
+        font-weight: 600;
+
+        &:hover {
+          background-color: #d1d5db;
+          color: #374151;
+        }
+      }
+
       .role-btn__icon {
         font-weight: 500;
         border-radius: 0.08rem;
@@ -577,9 +630,9 @@ const confirmEditTitle = async (conversationUuid: string) => {
       }
 
       &.active {
-        background-color: #e5f3ff;
-        color: #0066cc;
-        font-weight: 500;
+        background-color: #e5e7eb;
+        color: #374151;
+        font-weight: 600;
       }
 
       .history-item-actions {
@@ -608,14 +661,51 @@ const confirmEditTitle = async (conversationUuid: string) => {
             color: #374151;
           }
 
-          &.rename-btn:hover {
-            background-color: #dbeafe;
-            color: #2563eb;
+          &.more-btn:hover {
+            background-color: #e5e7eb;
+            color: #374151;
           }
+        }
 
-          &.delete-btn:hover {
-            background-color: #fee2e2;
-            color: #dc2626;
+        // 下拉菜单样式
+        :deep(.el-dropdown) {
+          .el-dropdown-menu {
+            border-radius: 0.12rem;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 0.1rem 0.3rem rgba(0, 0, 0, 0.15);
+            padding: 0.08rem 0;
+
+            .el-dropdown-menu__item {
+              font-size: 0.24rem;
+              padding: 0.12rem 0.16rem;
+              margin: 0.02rem 0.08rem;
+              border-radius: 0.08rem;
+              display: flex;
+              align-items: center;
+              gap: 0.08rem;
+              color: #374151;
+              transition: all 0.2s;
+
+              .el-icon {
+                font-size: 0.18rem;
+                color: #6b7280;
+              }
+
+              &:hover {
+                background-color: #f3f4f6;
+                color: #111827;
+
+                .el-icon {
+                  color: #374151;
+                }
+              }
+
+              &.is-divided {
+                border-top: 1px solid #e5e7eb;
+                margin-top: 0.08rem;
+                padding-top: 0.12rem;
+              }
+            }
           }
         }
       }

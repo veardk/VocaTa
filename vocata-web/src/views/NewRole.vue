@@ -1,7 +1,7 @@
 <template>
   <div :class="isM ? 'mobile' : 'pc'" class="main-container">
     <div class="header">新建角色</div>
-    <el-form ref="form" :model="form" label-width="80px" class="form">
+    <el-form label-width="80px" class="form">
       <el-upload
         class="avatar-uploader"
         :action="baseUrl + '/api/client/character/upload-avatar'"
@@ -13,8 +13,10 @@
         <img v-if="imageUrl" :src="imageUrl" class="avatar" />
         <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
       </el-upload>
+
       <span class="form-label required"> 角色名称</span>
       <input placeholder="例如：张三" v-model="form.name" class="form-input" />
+
       <span class="form-label required"> 描述</span>
       <textarea
         placeholder="你的角色信息"
@@ -22,17 +24,22 @@
         class="form-textarea"
         rows="4"
       ></textarea>
+
       <span class="form-label required"> 开场白</span>
       <input placeholder="你好呀！" v-model="form.greeting" class="form-input" />
+
       <span class="form-label required">角色声音</span>
       <el-select v-model="form.voiceId" placeholder="请选择角色声音">
-        <el-option v-for="item in options" :key="item.id" :label="item.name" :value="item.name">
+        <el-option v-for="item in options" :key="item.name" :label="item.name" :value="item.name">
         </el-option>
       </el-select>
+
       <el-checkbox label="是否公开角色 " v-model="form.isPublic" />
+
       <span class="form-label">
         注意：系统会根据您填写的信息生成角色的提示词，如果希望自定义添加请填写提示词。
       </span>
+
       <span class="form-label"> Prompt提示词</span>
       <textarea placeholder="你的角色提示词" class="form-textarea" rows="4"></textarea>
       <div class="newBtn" type="primary" @click="createRole">创建</div>
@@ -42,15 +49,19 @@
 
 <script setup lang="ts">
 import { isMobile } from '@/utils/isMobile'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadProps } from 'element-plus'
 import { getToken } from '@/utils/token'
 import { roleApi } from '@/api/modules/role'
+import { chatHistoryStore } from '@/store'
+import { useRouter } from 'vue-router'
 
 const isM = computed(() => isMobile())
 const baseUrl = import.meta.env.VITE_APP_URL
+// 头像相关
+const imageUrl = ref('')
 // 表单数据
 const form = ref({
   name: '',
@@ -59,26 +70,23 @@ const form = ref({
   isPublic: false,
   persona: '',
   voiceId: '',
+  avatarUrl: '',
 })
 
 // 音色
-const options = ref([])
-
-onMounted(() => {
-  getVoice()
-})
-
+const options = ref()
+const router = useRouter()
 //获取音色
 const getVoice = async () => {
   const res = await roleApi.getSoundList()
   options.value = res.data
+  console.log(options.value)
 }
-
-// 头像相关
-const imageUrl = ref('')
+getVoice()
 
 const handleAvatarSuccess: UploadProps['onSuccess'] = (response, uploadFile) => {
-  imageUrl.value = URL.createObjectURL(uploadFile.raw!)
+  imageUrl.value = response.data.fileUrl
+  form.value.avatarUrl = response.data.fileUrl
 }
 
 const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
@@ -111,6 +119,43 @@ const createRole = async () => {
     return
   }
   const res = await roleApi.createRole(form.value)
+  if (res.code === 200) {
+    ElMessage.success('创建成功')
+  } else {
+    ElMessage.error(res.message)
+  }
+  startConversation(res.data.id)
+  // console.log('表单', form.value)
+}
+
+// 开始对话
+const startConversation = async (characterId: string | number) => {
+  try {
+    console.log('点击开始对话，角色ID:', characterId)
+    console.log('角色ID类型:', typeof characterId)
+
+    if (!characterId) {
+      console.error('角色ID为空')
+      ElMessage.error('角色信息有误，请重试')
+      return
+    }
+
+    // 添加加载状态
+    const loadingMessage = ElMessage.info('正在创建对话...')
+
+    // 调用创建对话接口，确保ID转换为字符串
+    const conversationUuid = await chatHistoryStore().addChatHistory(characterId)
+
+    loadingMessage.close()
+
+    ElMessage.success('对话创建成功！')
+
+    // 跳转到聊天页面
+    router.push(`/chat/${conversationUuid}`)
+  } catch (error) {
+    console.error('创建对话失败:', error)
+    ElMessage.error('创建对话失败，请稍后重试')
+  }
 }
 </script>
 

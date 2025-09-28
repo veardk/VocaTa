@@ -71,15 +71,16 @@
     <!-- 角色列表配置 -->
     <div class="role-list-config">
       <h3>角色列表</h3>
-      <div>
+      <div v-if="!searchInput">
+        <span :class="currentView === 'my' ? 'active-config' : ''" @click="setViewMode('my')">我的</span>
         <span
-          :class="searchParam.orderDirection == 'desc' ? 'active-config' : ''"
-          @click="searchParam.orderDirection = 'desc'"
+          :class="currentView === 'public' && searchParam.orderDirection == 'desc' ? 'active-config' : ''"
+          @click="setViewMode('hot')"
           >热门</span
         >
         <span
-          :class="searchParam.orderDirection == 'asc' ? 'active-config' : ''"
-          @click="searchParam.orderDirection = 'asc'"
+          :class="currentView === 'public' && searchParam.orderDirection == 'asc' ? 'active-config' : ''"
+          @click="setViewMode('latest')"
           >最新</span
         >
       </div>
@@ -176,6 +177,7 @@ const roleSelected = ref<roleInfo>()
 const searchInput = ref('')
 const roleList: Ref<roleInfo[]> = ref([])
 const selectRoleList: Ref<roleInfo[]> = ref([])
+const myRoleList: Ref<roleInfo[]> = ref([])
 const cardFace = ref([0, 0, 0, 0, 0])
 const searchParam: Ref<PublicRoleQuery> = ref({
   pageNum: 1,
@@ -183,6 +185,7 @@ const searchParam: Ref<PublicRoleQuery> = ref({
   orderDirection: 'desc',
 })
 const total = ref(0)
+const currentView = ref('public') // 默认显示公开角色（热门）
 
 const seachStatus = ref(true)
 const infoShow = ref(false)
@@ -191,9 +194,13 @@ const loading1 = ref(false)
 const loading2 = ref(false)
 // 这里可以放全局逻辑
 watch(
-  searchParam,
+  [searchParam, currentView],
   () => {
-    getRoleList()
+    if (currentView.value === 'public') {
+      getRoleList()
+    } else if (currentView.value === 'my') {
+      getMyRoleList()
+    }
   },
   {
     deep: true,
@@ -243,16 +250,53 @@ const getSelectedRoleList = async () => {
   console.log('精选角色列表:', selectRoleList.value)
   loading1.value = false
 }
+
+// 获取我的角色列表
+const getMyRoleList = async () => {
+  loading2.value = true
+  try {
+    const res = await roleApi.getMyRoleList()
+    roleList.value = res.data.list || res.data
+    console.log('我的角色列表:', roleList.value)
+    total.value = roleList.value.length
+  } catch (error) {
+    console.error('获取我的角色列表失败:', error)
+    ElMessage.error('获取我的角色列表失败')
+    roleList.value = []
+    total.value = 0
+  } finally {
+    loading2.value = false
+  }
+}
+
+// 设置视图模式
+const setViewMode = (mode: string) => {
+  if (mode === 'my') {
+    currentView.value = 'my'
+  } else {
+    currentView.value = 'public'
+    if (mode === 'hot') {
+      searchParam.value.orderDirection = 'desc'
+    } else if (mode === 'latest') {
+      searchParam.value.orderDirection = 'asc'
+    }
+  }
+}
 const debouncedSearch = debounce(async () => {
   console.log('搜索:', searchInput.value)
   if (searchInput.value != '') {
+    currentView.value = 'public'
     seachStatus.value = false
     const res = await roleApi.searchRole({ keyword: searchInput.value })
     console.log(searchInput.value)
     roleList.value = res.data.list
   } else {
     seachStatus.value = true
-    getRoleList()
+    if (currentView.value === 'public') {
+      getRoleList()
+    } else if (currentView.value === 'my') {
+      getMyRoleList()
+    }
   }
 }, 500)
 const search = () => {
@@ -546,7 +590,9 @@ const handlePageChange = (page: number) => {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    background-size: 100% 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     width: 2.75rem;
     height: 3.3rem;
     background-color: #eee;
@@ -562,7 +608,7 @@ const handlePageChange = (page: number) => {
     &:hover {
       background: rgba(255, 255, 255, 0.3);
       z-index: 5;
-      transform: translate(-50%, -50%) scale(1.1) !important;
+      transform: translate(-50%, -50%) scale(1.2) !important;
     }
   }
   &:last-child {
@@ -599,7 +645,9 @@ const handlePageChange = (page: number) => {
     width: 2.75rem;
     height: 3.3rem;
     font-size: 0.3rem;
-    background-size: 100% 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     transform-style: preserve-3d;
     transition: transform 0.8s;
     border: 1px solid #ccc;

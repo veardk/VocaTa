@@ -26,6 +26,14 @@ export const roleApi = {
       params
     })
   },
+  // 获取我的角色列表
+  getMyRoleList(params?: any) {
+    return request({
+      url: '/api/client/character/my',
+      method: 'get',
+      params
+    })
+  },
   // 创建角色
   createRole(data: any) {
     return request({

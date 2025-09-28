@@ -68,7 +68,7 @@ const handleExplore = () => {
   width: 100%;
   overflow: auto;
   background-color: #fff;
-  font-size: 0.2rem;
+  font-size: 14px;
   transition: all 0.3s ease;
 }
 
