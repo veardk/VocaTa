@@ -248,7 +248,15 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
     public IPage<Map<String, Object>> getPublicCharactersWithCreator(Page<Character> page, Integer status,
                                                                    Integer isFeatured, List<String> tags,
                                                                    String orderBy, String orderDirection) {
-        return this.baseMapper.selectPublicCharactersWithCreator(page, status, isFeatured);
+        // 设置默认排序参数
+        if (StringUtils.isBlank(orderBy)) {
+            orderBy = "chat_count";
+        }
+        if (StringUtils.isBlank(orderDirection)) {
+            orderDirection = "desc";
+        }
+
+        return this.baseMapper.selectPublicCharactersWithCreator(page, status, isFeatured, orderBy, orderDirection);
     }
 
     @Override

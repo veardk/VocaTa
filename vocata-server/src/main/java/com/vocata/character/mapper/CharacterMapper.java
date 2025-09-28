@@ -62,6 +62,8 @@ public interface CharacterMapper extends BaseMapper<Character> {
      * @param page 分页参数
      * @param status 角色状态
      * @param isFeatured 是否精选
+     * @param orderBy 排序字段
+     * @param orderDirection 排序方向
      * @return 角色列表（包含创建者名称）
      */
     @Select("<script>" +
@@ -77,11 +79,42 @@ public interface CharacterMapper extends BaseMapper<Character> {
             "AND c.is_delete = 0 " +
             "<if test='status != null'> AND c.status = #{status} </if>" +
             "<if test='isFeatured != null'> AND c.is_featured = #{isFeatured} </if>" +
-            "ORDER BY c.chat_count DESC, c.created_at DESC" +
+            "ORDER BY " +
+            "<choose>" +
+            "  <when test='orderBy == \"chat_count\"'>" +
+            "    c.chat_count " +
+            "  </when>" +
+            "  <when test='orderBy == \"created_at\"'>" +
+            "    c.created_at " +
+            "  </when>" +
+            "  <when test='orderBy == \"updated_at\"'>" +
+            "    c.updated_at " +
+            "  </when>" +
+            "  <when test='orderBy == \"trending_score\"'>" +
+            "    c.trending_score " +
+            "  </when>" +
+            "  <when test='orderBy == \"sort_weight\"'>" +
+            "    c.sort_weight " +
+            "  </when>" +
+            "  <otherwise>" +
+            "    c.chat_count " +
+            "  </otherwise>" +
+            "</choose>" +
+            "<choose>" +
+            "  <when test='orderDirection == \"asc\"'>" +
+            "    ASC " +
+            "  </when>" +
+            "  <otherwise>" +
+            "    DESC " +
+            "  </otherwise>" +
+            "</choose>" +
+            ", c.created_at DESC" +
             "</script>")
     IPage<Map<String, Object>> selectPublicCharactersWithCreator(Page<?> page,
                                                                 @Param("status") Integer status,
-                                                                @Param("isFeatured") Integer isFeatured);
+                                                                @Param("isFeatured") Integer isFeatured,
+                                                                @Param("orderBy") String orderBy,
+                                                                @Param("orderDirection") String orderDirection);
 
     /**
      * 获取精选角色列表（包含创建者名称）
