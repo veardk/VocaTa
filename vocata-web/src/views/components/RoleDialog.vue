@@ -17,7 +17,7 @@
           </div>
           <div class="name">{{ item.name }}</div>
         </div>
-        <div class="creator">作者：@ {{ item.creatorName || '未知' }}</div>
+        <div class="creator">作者：@ {{ item.creatorId ? `用户${item.creatorId}` : '官方' }}</div>
       </div>
       <div class="description flex">
         <div class="label">描述：</div>
@@ -29,12 +29,12 @@
       </div>
       <div class="tags flex">
         <div class="label">标签：</div>
-        <div class="value tags">
-          <span class="tag" v-for="(tag, index) in item.tagNames" :key="index"># {{ tag }}</span>
-          <span v-if="!item.tagNames" class="tag">暂无标签</span>
+        <div class="value tags-container">
+          <span class="tag" v-for="(tag, index) in tagsList" :key="index">{{ tag }}</span>
+          <span v-if="!tagsList || tagsList.length === 0" class="no-tags">暂无标签</span>
         </div>
       </div>
-      <div class="goto">开始对话</div>
+      <div class="goto" @click="startConversation">开始对话</div>
     </div>
   </div>
   <div class="bgc"></div>
@@ -43,11 +43,74 @@
 <script setup lang="ts">
 import { isMobile } from '@/utils/isMobile'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { chatHistoryStore } from '@/store'
+import { ElMessage } from 'element-plus'
+
 const { item } = defineProps({
   item: Object,
 })
+
+const emit = defineEmits(['close'])
+const router = useRouter()
 const isM = computed(() => isMobile())
-// 这里可以放全局逻辑
+
+// 处理标签数据：将字符串转换为数组，并清理特殊字符
+const tagsList = computed(() => {
+  if (!item.tags) return []
+
+  let tags = []
+
+  // 如果tags是字符串，尝试按逗号分割
+  if (typeof item.tags === 'string') {
+    tags = item.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+  } else if (Array.isArray(item.tags)) {
+    // 如果已经是数组，直接使用
+    tags = item.tags
+  } else {
+    return []
+  }
+
+  // 清理标签中的特殊字符：#、引号、方括号等
+  return tags.map(tag => {
+    return tag
+      .replace(/^["'\[\]#\s]+|["'\[\]#\s]+$/g, '') // 去掉开头和结尾的特殊字符
+      .replace(/["'\[\]#]/g, '') // 去掉中间的特殊字符
+      .trim()
+  }).filter(tag => tag.length > 0)
+})
+
+// 开始对话功能
+const startConversation = async () => {
+  try {
+    console.log('角色详情弹窗 - 开始对话，角色ID:', item.id)
+
+    if (!item.id) {
+      console.error('角色ID为空')
+      ElMessage.error('角色信息有误，请重试')
+      return
+    }
+
+    // 添加加载状态
+    const loadingMessage = ElMessage.info('正在创建对话...')
+
+    // 调用创建对话接口
+    const conversationUuid = await chatHistoryStore().addChatHistory(item.id)
+
+    loadingMessage.close()
+
+    ElMessage.success('对话创建成功！')
+
+    // 关闭弹窗
+    emit('close')
+
+    // 跳转到聊天页面
+    router.push(`/chat/${conversationUuid}`)
+  } catch (error) {
+    console.error('创建对话失败:', error)
+    ElMessage.error('创建对话失败，请稍后重试')
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -93,8 +156,14 @@ const isM = computed(() => isMobile())
         margin: 0.1rem 0;
       }
       .label,
-      .value,
+      .value {
+        font-size: 0.16rem;
+      }
       .tag {
+        font-size: 0.16rem;
+        padding: 0.08rem 0.12rem;
+      }
+      .no-tags {
         font-size: 0.16rem;
       }
     }
@@ -164,16 +233,46 @@ const isM = computed(() => isMobile())
   width: 100%;
   display: flex;
   justify-content: start;
+  align-items: center;
   margin: 0.1rem;
 }
+
 .tags {
   display: flex;
+  align-items: center;
 }
+
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.08rem;
+  align-items: center;
+}
+
 .tag {
-  margin-right: 0.1rem;
-  padding: 0.05rem 0.1rem;
-  border-radius: 0.1rem;
-  background-color: #fdf;
+  display: inline-block;
+  margin: 0;
+  padding: 0.08rem 0.12rem;
+  border-radius: 0.08rem;
+  background-color: #f0f0f0;
+  border: 1px solid #d5d5d5;
+  color: #333333;
+  font-size: 0.16rem;
+  font-weight: 400;
+  line-height: 1.3;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: #e5e5e5;
+    border-color: #bbb;
+  }
+}
+
+.no-tags {
+  color: #999999;
+  font-size: 0.16rem;
+  font-style: italic;
 }
 .goto {
   // width: 20%;
