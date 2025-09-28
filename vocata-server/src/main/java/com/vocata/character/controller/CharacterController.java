@@ -3,12 +3,17 @@ package com.vocata.character.controller;
 import cn.dev33.satoken.annotation.SaCheckLogin;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.vocata.character.dto.request.CharacterAiGenerateRequest;
 import com.vocata.character.dto.request.CharacterCreateRequest;
+import com.vocata.character.dto.request.CharacterCreateWithAiRequest;
 import com.vocata.character.dto.request.CharacterSearchRequest;
 import com.vocata.character.dto.request.CharacterUpdateRequest;
+import com.vocata.character.dto.response.CharacterAiGenerateResponse;
+import com.vocata.character.dto.response.CharacterCreateWithAiResponse;
 import com.vocata.character.dto.response.CharacterDetailResponse;
 import com.vocata.character.dto.response.CharacterResponse;
 import com.vocata.character.entity.Character;
+import com.vocata.character.service.CharacterAiGenerateService;
 import com.vocata.character.service.CharacterService;
 import com.vocata.common.constant.CharacterStatus;
 import com.vocata.common.result.ApiResponse;
@@ -38,6 +43,9 @@ public class CharacterController {
     private CharacterService characterService;
 
     @Autowired
+    private CharacterAiGenerateService characterAiGenerateService;
+
+    @Autowired
     private FileService fileService;
 
     /**
@@ -49,6 +57,33 @@ public class CharacterController {
     public ApiResponse<FileUploadResponse> uploadAvatar(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = fileService.uploadFile(file, "character-avatar");
         return ApiResponse.success("头像上传成功", response);
+    }
+
+    /**
+     * AI生成角色设定（需要登录）
+     * POST /api/client/character/ai-generate
+     */
+    @PostMapping("/ai-generate")
+    @SaCheckLogin
+    public ApiResponse<CharacterAiGenerateResponse> generateCharacter(@Valid @RequestBody CharacterAiGenerateRequest request) {
+        CharacterAiGenerateResponse response = characterAiGenerateService.generateCharacter(request);
+        return ApiResponse.success("AI角色生成成功", response);
+    }
+
+    /**
+     * 创建角色并自动生成AI设定（需要登录）
+     * POST /api/client/character/create-with-ai
+     *
+     * 此接口会：
+     * 1. 立即创建角色基础记录并返回
+     * 2. 异步调用AI生成详细设定并更新数据库
+     */
+    @PostMapping("/create-with-ai")
+    @SaCheckLogin
+    public ApiResponse<CharacterCreateWithAiResponse> createCharacterWithAi(
+            @Valid @RequestBody CharacterCreateWithAiRequest request) {
+        CharacterCreateWithAiResponse response = characterService.createWithAi(request);
+        return ApiResponse.success("角色创建成功，AI生成的详细设定正在后台处理", response);
     }
 
     /**

@@ -93,6 +93,13 @@ public interface ConversationService {
     void generateConversationTitleAsync(Long conversationId, String firstMessage);
 
     /**
+     * 检查并触发新对话的标题生成
+     * 当对话满足条件时（第一次创建且有完整的一问一答），自动生成标题
+     * @param conversationId 对话ID
+     */
+    void triggerTitleGenerationForNewConversation(Long conversationId);
+
+    /**
      * 更新对话标题
      * @param conversationUuid 对话UUID
      * @param userId 用户ID

@@ -14,6 +14,7 @@ import com.vocata.conversation.entity.Message;
 import com.vocata.conversation.mapper.ConversationMapper;
 import com.vocata.conversation.mapper.MessageMapper;
 import com.vocata.conversation.service.ConversationService;
+import com.vocata.conversation.service.ConversationTitleGenerationService;
 import com.vocata.ai.llm.LlmProvider;
 import com.vocata.ai.dto.UnifiedAiRequest;
 import com.vocata.ai.dto.UnifiedAiStreamChunk;
@@ -50,6 +51,9 @@ public class ConversationServiceImpl implements ConversationService {
     @Autowired
     @Qualifier("primaryLlmProvider")
     private LlmProvider llmProvider;
+
+    @Autowired
+    private ConversationTitleGenerationService titleGenerationService;
 
     @Value("${gemini.api.default-model:gemini-2.5-flash-lite}")
     private String defaultLlmModel;
@@ -284,6 +288,23 @@ public class ConversationServiceImpl implements ConversationService {
             } catch (Exception ex) {
                 logger.error("设置默认标题时也出错了: {}", ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * 新方法：基于一问一答生成对话标题
+     *
+     * @param conversationId 对话ID
+     */
+    @Override
+    public void triggerTitleGenerationForNewConversation(Long conversationId) {
+        logger.info("检查对话{}是否需要生成标题", conversationId);
+
+        if (titleGenerationService.shouldGenerateTitle(conversationId)) {
+            logger.info("对话{}满足标题生成条件，开始异步生成", conversationId);
+            titleGenerationService.generateTitleAsync(conversationId);
+        } else {
+            logger.debug("对话{}不满足标题生成条件，跳过", conversationId);
         }
     }
 

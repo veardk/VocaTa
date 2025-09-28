@@ -158,6 +158,14 @@ openai:
     default-model: ${OPENAI_MODEL:gpt-3.5-turbo}
     timeout: ${OPENAI_TIMEOUT:60}
 
+# SiliconFlow配置
+siliconflow:
+  ai:
+    api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key}
+    base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+    default-model: ${SILICONFLOW_AI_MODEL:Qwen/Qwen3-8B}
+    timeout: ${SILICONFLOW_TIMEOUT:60}
+
 # 本地开发日志配置
 logging:
   level:

@@ -261,16 +261,18 @@ public class QiniuLlmProvider implements LlmProvider, InitializingBean {
                 JsonNode choice = choices.get(0);
                 JsonNode delta = choice.get("delta");
 
-                if (delta != null && delta.has("content")) {
-                    String content = delta.get("content").asText();
+                String content = delta != null && delta.has("content")
+                        ? delta.get("content").asText()
+                        : null;
 
+                String finishReason = choice.has("finish_reason") && !choice.get("finish_reason").isNull()
+                        ? choice.get("finish_reason").asText()
+                        : null;
+                boolean isFinished = "stop".equals(finishReason) || "length".equals(finishReason);
+
+                if (content != null || isFinished) {
                     UnifiedAiStreamChunk chunk = new UnifiedAiStreamChunk();
                     chunk.setContent(content);
-
-                    // 检查是否完成
-                    String finishReason = choice.has("finish_reason") && !choice.get("finish_reason").isNull()
-                        ? choice.get("finish_reason").asText() : null;
-                    boolean isFinished = "stop".equals(finishReason) || "length".equals(finishReason);
                     chunk.setIsFinal(isFinished);
 
                     logger.debug("解析七牛云AI响应: content={}, isFinished={}", content, isFinished);

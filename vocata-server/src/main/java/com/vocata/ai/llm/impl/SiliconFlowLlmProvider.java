@@ -41,7 +41,7 @@ public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
     @Value("${siliconflow.ai.base-url:https://api.siliconflow.cn/v1}")
     private String baseUrl;
 
-    @Value("${siliconflow.ai.default-model:deepseek-ai/DeepSeek-V2.5}")
+    @Value("${siliconflow.ai.default-model:Qwen/Qwen3-8B}")
     private String defaultModel;
 
     @Value("${siliconflow.ai.timeout:120}")
@@ -84,12 +84,15 @@ public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
             "deepseek-ai/DeepSeek-V2.5",
             "deepseek-ai/deepseek-llm-67b-chat",
             "deepseek-ai/deepseek-coder-33b-instruct",
+            "deepseek-ai/DeepSeek-V3",
+            "deepseek-ai/DeepSeek-R1",
 
-            // Qwen 系列
-            "Qwen/Qwen2.5-72B-Instruct",
+            // Qwen 系列 (免费)
+            "Qwen/Qwen3-8B",             // 免费模型 - 最新
+            "Qwen/Qwen2.5-7B-Instruct",  // 免费模型
+            "Qwen/Qwen2.5-14B-Instruct", // 免费模型
             "Qwen/Qwen2.5-32B-Instruct",
-            "Qwen/Qwen2.5-14B-Instruct",
-            "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen2.5-72B-Instruct",
             "Qwen/Qwen2-VL-72B-Instruct",
 
             // Llama 系列
@@ -196,7 +199,7 @@ public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
                             DataBufferUtils.release(dataBuffer);
                             return new String(bytes, StandardCharsets.UTF_8);
                         })
-                        .buffer() // 缓冲数据以处理不完整的SSE消息
+                        .buffer(Duration.ofMillis(50)) // 减少缓冲时间，加快响应
                         .flatMap(lines -> {
                             String combined = String.join("", lines);
                             return Flux.fromArray(combined.split("\n"))
@@ -206,6 +209,9 @@ public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
                         })
                         .timeout(Duration.ofSeconds(timeoutSeconds))
                         .flatMap(this::parseSiliconFlowStreamChunk)
+                        .filter(chunk -> chunk.getContent() != null)  // 过滤null内容
+                        .filter(chunk -> !chunk.getContent().trim().isEmpty())  // 过滤空内容
+                        .filter(chunk -> !"null".equals(chunk.getContent()))  // 过滤字符串"null"
                         .collectList() // 收集所有chunk
                         .flatMapMany(chunks -> {
                             // 手动处理累积内容
@@ -335,6 +341,11 @@ public class SiliconFlowLlmProvider implements LlmProvider, InitializingBean {
 
                 if (delta != null && delta.has("content")) {
                     String content = delta.get("content").asText();
+
+                    // 过滤无效内容
+                    if (content == null || content.trim().isEmpty() || "null".equals(content)) {
+                        return Flux.empty();
+                    }
 
                     UnifiedAiStreamChunk chunk = new UnifiedAiStreamChunk();
                     chunk.setContent(content);

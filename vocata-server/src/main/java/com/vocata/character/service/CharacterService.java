@@ -2,6 +2,9 @@ package com.vocata.character.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.vocata.character.dto.request.CharacterCreateWithAiRequest;
+import com.vocata.character.dto.response.CharacterAiGenerateResponse;
+import com.vocata.character.dto.response.CharacterCreateWithAiResponse;
 import com.vocata.character.entity.Character;
 
 import java.util.List;
@@ -183,5 +186,20 @@ public interface CharacterService {
      */
     boolean updateCharacterTagFields(Long characterId, Long[] tagIds, String[] tagNames,
                                    Long[] primaryTagIds, String tagSummary);
+
+    /**
+     * 创建角色并异步生成AI设定
+     * @param request 创建请求
+     * @return 创建响应
+     */
+    CharacterCreateWithAiResponse createWithAi(CharacterCreateWithAiRequest request);
+
+    /**
+     * 异步更新角色的AI生成字段
+     * @param characterId 角色ID
+     * @param aiResponse AI生成的响应数据
+     * @return 是否更新成功
+     */
+    boolean updateAiGeneratedFields(Long characterId, CharacterAiGenerateResponse aiResponse);
 
 }

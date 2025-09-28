@@ -188,9 +188,17 @@ public class AiStreamingService {
             llmProvider.streamChat(llmRequest)
                     .replay()
                     .autoConnect(1)
-                    .publish(llmFlux -> {
-                        Flux<AiStreamingResponse> llmStream = llmFlux
-                                .doOnNext(chunk -> logger.debug("LLM响应块: {}", chunk.getContent()))
+                    .publish(sharedFlux -> {
+                        StringBuilder fullResponseBuilder = new StringBuilder();
+
+                        Flux<AiStreamingResponse> llmStream = sharedFlux
+                                .doOnNext(chunk -> {
+                                    String chunkContent = chunk.getContent();
+                                    if (chunkContent != null) {
+                                        fullResponseBuilder.append(chunkContent);
+                                    }
+                                    logger.debug("LLM响应块: {}", chunkContent);
+                                })
                                 .map(chunk -> {
                                     AiStreamingResponse response = new AiStreamingResponse();
                                     response.setType(AiStreamingResponse.ResponseType.LLM_CHUNK);
@@ -198,13 +206,18 @@ public class AiStreamingService {
                                     return response;
                                 });
 
-                        Flux<AiStreamingResponse> ttsStream = llmFlux
-                                .filter(chunk -> chunk.getIsFinal() != null && chunk.getIsFinal())
-                                .take(1)
-                                .flatMap(finalChunk -> processTtsResponse(conversation.getId(),
-                                                                        character,
-                                                                        finalChunk.getAccumulatedContent(),
-                                                                        userId));
+                        Flux<AiStreamingResponse> ttsStream = sharedFlux
+                                .ignoreElements()
+                                .then(Mono.fromCallable(() -> fullResponseBuilder.toString()))
+                                .map(String::trim)
+                                .filter(text -> !text.isEmpty())
+                                .flatMapMany(fullText -> {
+                                    logger.info("LLM完整回复已生成，准备执行TTS: {}", fullText);
+                                    return processTtsResponse(conversation.getId(),
+                                                             character,
+                                                             fullText,
+                                                             userId);
+                                });
 
                         return llmStream.concatWith(ttsStream);
                     })
@@ -234,6 +247,18 @@ public class AiStreamingService {
                     .doOnNext(ttsResult -> logger.debug("生成TTS结果: {} bytes音频, 文字: {}",
                         ttsResult.getAudioData().length, ttsResult.getCorrespondingText()))
                     .map(ttsResult -> {
+                        if (ttsResult.getCorrespondingText() == null || ttsResult.getCorrespondingText().trim().isEmpty()) {
+                            ttsResult.setCorrespondingText(aiText);
+                        }
+                        if (ttsResult.getVoiceId() == null || ttsResult.getVoiceId().trim().isEmpty()) {
+                            ttsResult.setVoiceId(character.getVoiceId());
+                        }
+                        if (ttsResult.getAudioFormat() == null || ttsResult.getAudioFormat().trim().isEmpty()) {
+                            ttsResult.setAudioFormat(ttsConfig.getAudioFormat());
+                        }
+                        if (ttsResult.getSampleRate() <= 0) {
+                            ttsResult.setSampleRate(ttsConfig.getSampleRate());
+                        }
                         // 返回包含音频和文字的TTS结果流
                         AiStreamingResponse response = new AiStreamingResponse();
                         response.setType(AiStreamingResponse.ResponseType.TTS_RESULT);
@@ -330,6 +355,17 @@ public class AiStreamingService {
                     }
                 } catch (Exception e) {
                     logger.error("增加角色聊天计数失败，对话ID: {}, 用户ID: {}", conversationId, userId, e);
+                    // 不影响主流程，继续执行
+                }
+            }
+
+            // 如果是AI回复消息，触发标题生成
+            if (senderType == SenderType.CHARACTER) {
+                try {
+                    logger.debug("AI回复已保存，检查是否需要生成对话标题: {}", conversationId);
+                    conversationService.triggerTitleGenerationForNewConversation(conversationId);
+                } catch (Exception e) {
+                    logger.error("触发标题生成失败，对话ID: {}", conversationId, e);
                     // 不影响主流程，继续执行
                 }
             }
@@ -524,8 +560,9 @@ public class AiStreamingService {
 
             return llmProvider.streamChat(llmRequest)
                 .doOnNext(chunk -> {
-                    logger.debug("【LLM阶段】收到文字流块: {}", chunk.getContent());
-                    fullResponseBuilder.append(chunk.getContent());
+                    String chunkContent = chunk.getContent() != null ? chunk.getContent() : "";
+                    logger.debug("【LLM阶段】收到文字流块: {}", chunkContent);
+                    fullResponseBuilder.append(chunkContent);
                 })
                 .map(chunk -> {
                     // 实时返回文字流
@@ -533,9 +570,9 @@ public class AiStreamingService {
                     textResponse.put("type", "text_chunk");
                     textResponse.put("timestamp", System.currentTimeMillis());
                     Map<String, Object> payload = new HashMap<>();
-                    payload.put("text", chunk.getContent());
+                    payload.put("text", chunk.getContent() != null ? chunk.getContent() : "");
                     payload.put("accumulated_text", chunk.getAccumulatedContent());
-                    payload.put("is_final", chunk.getIsFinal());
+                    payload.put("is_final", chunk.getIsFinal() != null && chunk.getIsFinal());
                     payload.put("character_name", character.getName());
                     textResponse.put("payload", payload);
                     return textResponse;
@@ -691,6 +728,8 @@ public class AiStreamingService {
                     ttsResultMap.put("voiceId", response.getTtsResult().getVoiceId());
                     ttsResultMap.put("startTime", response.getTtsResult().getStartTime());
                     ttsResultMap.put("endTime", response.getTtsResult().getEndTime());
+                    ttsResultMap.put("durationSeconds", response.getTtsResult().getDurationSeconds());
+                    ttsResultMap.put("metadata", response.getTtsResult().getMetadata());
                     webSocketResponse.put("tts_result", ttsResultMap);
                 }
                 break;

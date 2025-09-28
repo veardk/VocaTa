@@ -5,8 +5,15 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vocata.character.dto.request.CharacterAiGenerateRequest;
+import com.vocata.character.dto.request.CharacterCreateWithAiRequest;
+import com.vocata.character.dto.response.CharacterAiGenerateResponse;
+import com.vocata.character.dto.response.CharacterCreateWithAiResponse;
 import com.vocata.character.entity.Character;
 import com.vocata.character.mapper.CharacterMapper;
+import com.vocata.character.service.CharacterAiGenerateService;
 import com.vocata.character.service.CharacterService;
 import com.vocata.character.service.CharacterChatCountService;
 import com.vocata.common.constant.CharacterStatus;
@@ -14,14 +21,20 @@ import com.vocata.common.exception.BizException;
 import com.vocata.common.result.ApiCode;
 import com.vocata.common.utils.UserContext;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -30,8 +43,16 @@ import java.util.stream.Collectors;
 @Service
 public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character> implements CharacterService {
 
+    private static final Logger logger = LoggerFactory.getLogger(CharacterServiceImpl.class);
+
     @Autowired
     private CharacterChatCountService characterChatCountService;
+
+    @Autowired
+    private CharacterAiGenerateService characterAiGenerateService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Override
     public Character getById(Long id) {
@@ -559,6 +580,187 @@ public class CharacterServiceImpl extends ServiceImpl<CharacterMapper, Character
 
         // 添加二级排序：创建时间降序
         wrapper.orderByDesc(Character::getCreateDate);
+    }
+
+    @Override
+    public CharacterCreateWithAiResponse createWithAi(CharacterCreateWithAiRequest request) {
+        logger.info("开始创建带AI生成的角色，名称: {}", request.getName());
+
+        // 1. 先创建基础角色记录
+        Character character = new Character();
+        BeanUtils.copyProperties(request, character);
+
+        // 生成唯一的角色编码
+        character.setCharacterCode(generateCharacterCode(request.getName()));
+
+        // 设置默认值
+        character.setStatus(CharacterStatus.UNDER_REVIEW);
+        character.setIsPrivate(request.getIsPrivate() != null ? request.getIsPrivate() : false);
+        character.setIsOfficial(0);
+        character.setIsFeatured(0);
+        character.setIsTrending(0);
+        character.setTrendingScore(0);
+        character.setChatCount(0L);
+        character.setChatCountToday(0);
+        character.setChatCountWeek(0);
+        character.setUserCount(0);
+        character.setSortWeight(0);
+        character.setCreateId(UserContext.getUserId());
+
+        // 设置默认的模型配置
+        character.setTemperature(new BigDecimal("0.7"));
+        character.setContextWindow(3000);
+        character.setLanguage("zh-CN");
+
+        // 保存角色记录
+        boolean saved = this.save(character);
+        if (!saved) {
+            throw new BizException(ApiCode.ERROR, "角色创建失败");
+        }
+
+        logger.info("角色基础信息创建成功，ID: {}", character.getId());
+
+        // 2. 构建响应对象
+        CharacterCreateWithAiResponse response = new CharacterCreateWithAiResponse();
+        response.setCharacterId(character.getId().toString());
+        response.setName(character.getName());
+        response.setDescription(character.getDescription());
+        response.setGreeting(character.getGreeting());
+        response.setAvatarUrl(character.getAvatarUrl());
+        response.setIsPrivate(character.getIsPrivate());
+        response.setStatus(character.getStatus());
+        response.setAiGenerationStatus("AI生成任务已启动，详细角色设定将在后台自动生成");
+
+        // 3. 异步启动AI生成任务
+        asyncGenerateAiFields(character.getId(), request);
+
+        return response;
+    }
+
+    @Override
+    public boolean updateAiGeneratedFields(Long characterId, CharacterAiGenerateResponse aiResponse) {
+        logger.info("开始更新角色AI生成字段，角色ID: {}", characterId);
+
+        try {
+            LambdaUpdateWrapper<Character> updateWrapper = new LambdaUpdateWrapper<>();
+            updateWrapper.eq(Character::getId, characterId);
+
+            // 设置persona
+            if (StringUtils.isNotBlank(aiResponse.getPersona())) {
+                updateWrapper.set(Character::getPersona, aiResponse.getPersona());
+            }
+
+            // 设置性格特征
+            if (aiResponse.getPersonalityTraits() != null && !aiResponse.getPersonalityTraits().isEmpty()) {
+                String personalityTraitsJson = listToJson(aiResponse.getPersonalityTraits());
+                updateWrapper.set(Character::getPersonalityTraits, personalityTraitsJson);
+            }
+
+            // 设置说话风格
+            if (StringUtils.isNotBlank(aiResponse.getSpeakingStyle())) {
+                updateWrapper.set(Character::getSpeakingStyle, aiResponse.getSpeakingStyle());
+            }
+
+            // 设置示例对话
+            if (aiResponse.getExampleDialogues() != null && !aiResponse.getExampleDialogues().isEmpty()) {
+                String exampleDialoguesJson = dialogueListToJson(aiResponse.getExampleDialogues());
+                updateWrapper.set(Character::getExampleDialogues, exampleDialoguesJson);
+            }
+
+            // 设置标签
+            if (aiResponse.getTags() != null && !aiResponse.getTags().isEmpty()) {
+                String tagsJson = listToJson(aiResponse.getTags());
+                updateWrapper.set(Character::getTags, tagsJson);
+            }
+
+            // 设置搜索关键词
+            if (StringUtils.isNotBlank(aiResponse.getSearchKeywords())) {
+                updateWrapper.set(Character::getSearchKeywords, aiResponse.getSearchKeywords());
+            }
+
+            // 执行更新
+            boolean updated = this.update(updateWrapper);
+            if (updated) {
+                logger.info("角色AI生成字段更新成功，角色ID: {}", characterId);
+            } else {
+                logger.error("角色AI生成字段更新失败，角色ID: {}", characterId);
+            }
+
+            return updated;
+
+        } catch (Exception e) {
+            logger.error("更新角色AI生成字段时发生异常，角色ID: " + characterId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 异步生成AI字段
+     */
+    @Async
+    public void asyncGenerateAiFields(Long characterId, CharacterCreateWithAiRequest request) {
+        logger.info("开始异步生成AI字段，角色ID: {}", characterId);
+
+        try {
+            // 构建AI生成请求
+            CharacterAiGenerateRequest aiRequest = new CharacterAiGenerateRequest();
+            aiRequest.setName(request.getName());
+            aiRequest.setDescription(request.getDescription());
+            aiRequest.setGreeting(request.getGreeting());
+
+            // 调用AI生成服务
+            CharacterAiGenerateResponse aiResponse = characterAiGenerateService.generateCharacter(aiRequest);
+
+            // 更新数据库字段
+            boolean updateResult = updateAiGeneratedFields(characterId, aiResponse);
+
+            if (updateResult) {
+                logger.info("角色AI字段异步生成完成，角色ID: {}", characterId);
+            } else {
+                logger.error("角色AI字段异步更新失败，角色ID: {}", characterId);
+            }
+
+        } catch (Exception e) {
+            logger.error("角色AI字段异步生成失败，角色ID: " + characterId, e);
+        }
+    }
+
+    /**
+     * 生成唯一的角色编码
+     */
+    private String generateCharacterCode(String name) {
+        // 基于名称和时间戳生成唯一编码
+        String baseCode = name.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5]", "");
+        if (baseCode.length() > 10) {
+            baseCode = baseCode.substring(0, 10);
+        }
+        String timestamp = String.valueOf(System.currentTimeMillis()).substring(8);
+        String uuid = UUID.randomUUID().toString().substring(0, 4);
+        return baseCode + "_" + timestamp + "_" + uuid;
+    }
+
+    /**
+     * 将List转换为JSON字符串
+     */
+    private String listToJson(List<String> list) {
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (JsonProcessingException e) {
+            logger.error("List转JSON失败", e);
+            return "[]";
+        }
+    }
+
+    /**
+     * 将对话列表转换为JSON字符串
+     */
+    private String dialogueListToJson(List<CharacterAiGenerateResponse.DialogueExample> dialogues) {
+        try {
+            return objectMapper.writeValueAsString(dialogues);
+        } catch (JsonProcessingException e) {
+            logger.error("对话列表转JSON失败", e);
+            return "[]";
+        }
     }
 
 }

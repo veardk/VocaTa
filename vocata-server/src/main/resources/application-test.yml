@@ -143,7 +143,7 @@ siliconflow:
   ai:
     api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key}
     base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
-    default-model: ${SILICONFLOW_MODEL:deepseek-ai/DeepSeek-V2.5}
+    default-model: ${SILICONFLOW_AI_MODEL:Qwen/Qwen3-8B}
     timeout: ${SILICONFLOW_TIMEOUT:120}
 
 # 科大讯飞配置

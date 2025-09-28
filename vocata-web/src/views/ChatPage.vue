@@ -10,11 +10,16 @@
       <div class="chat-container" ref="chatContainer">
         <div class="chat-item" v-for="(item, index) in chats" :key="index">
           <div v-if="item.type == 'receive'" class="receive">
-            <div class="avatar"></div>
+            <div class="avatar">
+              <img
+                v-if="characterAvatar"
+                :src="characterAvatar"
+                :alt="getCharacterName()"
+              />
+              <div v-else class="avatar-placeholder">{{ characterInitials }}</div>
+            </div>
             <div class="right">
-              <div class="name">{{ getCharacterName() }}</div>
               <div class="content" :class="{ 'streaming': item.isStreaming }">
-                <span class="text-prefix">{{ getCharacterName() }}：</span>
                 <span class="text-content">{{ item.content }}</span>
                 <span v-if="item.isStreaming" class="typing-cursor">|</span>
               </div>
@@ -23,23 +28,34 @@
           </div>
           <div v-else-if="item.type == 'send'" class="send">
             <div class="left">
-              <div class="name">ME</div>
               <div class="content" :class="{ 'recognizing': item.isRecognizing }">
-                <span class="text-prefix">ME：</span>
                 <span class="text-content">{{ item.content }}</span>
                 <span v-if="item.isRecognizing" class="recognition-tip">(识别中...)</span>
               </div>
               <div v-if="item.createDate" class="time">{{ formatTime(item.createDate) }}</div>
             </div>
-            <div class="avatar"></div>
+            <div class="avatar">
+              <img
+                v-if="userAvatar"
+                :src="userAvatar"
+                :alt="userDisplayName"
+              />
+              <div v-else class="avatar-placeholder">{{ userInitials }}</div>
+            </div>
           </div>
         </div>
 
         <!-- 加载指示器 -->
         <div v-if="isAIThinking" class="ai-thinking">
-          <div class="avatar"></div>
+          <div class="avatar">
+            <img
+              v-if="characterAvatar"
+              :src="characterAvatar"
+              :alt="getCharacterName()"
+            />
+            <div v-else class="avatar-placeholder">{{ characterInitials }}</div>
+          </div>
           <div class="thinking-content">
-            <div class="name">{{ getCharacterName() }}</div>
             <div class="thinking-dots">
               <span></span><span></span><span></span>
             </div>
@@ -88,6 +104,25 @@
 
         <div class="voice-minimal__status">{{ voiceStatusText }}</div>
 
+        <div class="voice-minimal__transcripts">
+          <div v-if="!visibleVoiceTranscripts.length" class="voice-minimal__transcripts-empty">
+            暂无语音内容，点击开始说话或等待 AI 回复。
+          </div>
+          <div v-else class="voice-minimal__transcripts-list">
+            <div
+              v-for="entry in visibleVoiceTranscripts"
+              :key="entry.timestamp"
+              class="voice-minimal__transcript-item"
+              :class="entry.speaker === 'user' ? 'is-user' : 'is-ai'"
+            >
+              <span class="voice-minimal__transcript-speaker">
+                {{ entry.speaker === 'user' ? '我' : getCharacterName() }}：
+              </span>
+              <span class="voice-minimal__transcript-text">{{ entry.text }}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="voice-minimal__controls">
           <button
             class="voice-minimal__control is-mic"
@@ -112,6 +147,7 @@
 
 <script setup lang="ts">
 import { conversationApi } from '@/api/modules/conversation'
+import { userApi } from '@/api/modules/user'
 import { isMobile } from '@/utils/isMobile'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
@@ -132,6 +168,15 @@ const route = useRoute()
 const conversationUuid = computed(() => route.params.conversationUuid as string)
 const currentConversation = ref<any>(null)
 
+const userAvatar = ref('')
+const userNickname = ref('')
+const userDisplayName = computed(() => userNickname.value || '我')
+const userInitials = computed(() => {
+  const name = userDisplayName.value
+  if (!name) return '我'
+  return name.slice(0, 1).toUpperCase()
+})
+
 // AI对话相关状态
 const aiChat = ref<VocaTaAIChat | null>(null)
 const isAudioCallActive = ref(false)
@@ -142,22 +187,38 @@ const currentSTTText = ref('')
 const currentStreamingMessage = ref<ChatMessage | null>(null)
 const isAISpeaking = ref(false)
 
+interface VoiceTranscriptEntry {
+  speaker: 'user' | 'ai'
+  text: string
+  timestamp: number
+}
+
+const voiceTranscripts = ref<VoiceTranscriptEntry[]>([])
+
+interface TypewriterState {
+  message: ChatMessage
+  targetText: string
+  currentIndex: number
+  intervalId: number | null
+  isComplete: boolean
+  started: boolean
+  fallbackTimeoutId: number | null
+}
+
+const typewriterState = ref<TypewriterState | null>(null)
+const TYPEWRITER_SPEED = 35
+
 // VAD相关状态
 const vadActive = ref(false)
 const vadCheckInterval = ref<number | null>(null)
 
-// 打字机效果相关状态
-const typewriterIntervals = ref<Map<number, number>>(new Map())
-const typewriterDisplayTexts = ref<Map<number, string>>(new Map())
-
-// 等待音频的消息队列
-const pendingAudioMessages = ref<Map<number, { text: string, characterName: string }>>(new Map())
-const audioReadyCallbacks = ref<Map<number, () => void>>(new Map())
 
 // 引用
 const chatContainer = ref<HTMLElement>()
 
 onMounted(async () => {
+  await loadUserProfile()
+
   if (conversationUuid.value) {
     try {
       await loadConversationAndMessages()
@@ -176,9 +237,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 清理所有打字机效果
-  clearAllTypewriterEffects()
-
+  resetTypewriterState()
   // 清理AI对话系统资源
   if (aiChat.value) {
     aiChat.value.destroy()
@@ -209,8 +268,10 @@ watch(
       isAIConnected.value = false // 重置连接状态
       currentSTTText.value = ''
       isAIThinking.value = false
+      resetTypewriterState()
       currentStreamingMessage.value = null
       isAISpeaking.value = false
+      voiceTranscripts.value = []
 
       try {
         // 重新加载（强制不使用缓存）
@@ -233,6 +294,18 @@ watch(
 )
 
 // 加载对话信息和消息
+const loadUserProfile = async () => {
+  try {
+    const res = await userApi.getUserInfo()
+    if (res.code === 200 && res.data) {
+      userAvatar.value = res.data.avatar || ''
+      userNickname.value = res.data.nickname || ''
+    }
+  } catch (error) {
+    console.error('❌ 获取用户信息失败:', error)
+  }
+}
+
 const loadConversationAndMessages = async () => {
   try {
     // 先加载对话信息
@@ -333,6 +406,14 @@ const sendMessage = async () => {
   const messageContent = input.value.trim()
   input.value = ''
 
+  if (aiChat.value) {
+    try {
+      await aiChat.value.prepareAudioPlayback()
+    } catch (error) {
+      console.warn('⚠️ 准备音频播放失败:', error)
+    }
+  }
+
   // 立即在界面上显示用户消息
   const userMessage: ChatMessage = {
     type: 'send',
@@ -427,6 +508,8 @@ const voiceStatusText = computed(() => {
   return '点击下方按钮开启语音对话'
 })
 
+const visibleVoiceTranscripts = computed(() => voiceTranscripts.value.slice(-6))
+
 // 初始化AI对话系统
 const initializeAIChat = async () => {
   console.log('🔥 开始初始化AI对话系统...')
@@ -502,6 +585,14 @@ const setupAIChatCallbacks = () => {
         createDate: new Date().toISOString()
       }
       chats.value.push(userMessage)
+      voiceTranscripts.value.push({
+        speaker: 'user',
+        text,
+        timestamp: Date.now()
+      })
+      if (voiceTranscripts.value.length > 12) {
+        voiceTranscripts.value.splice(0, voiceTranscripts.value.length - 12)
+      }
       scrollToBottomWithRetry()
 
       // 显示AI思考状态
@@ -510,7 +601,7 @@ const setupAIChatCallbacks = () => {
     }
   })
 
-  // LLM流式文本回调 - 保持AI思考状态版本
+  // LLM流式文本回调
   aiChat.value.onLLMStream((text, isComplete, characterName) => {
     console.log('🤖 收到LLM流式消息:', {
       text: text?.substring(0, 50),
@@ -519,70 +610,119 @@ const setupAIChatCallbacks = () => {
       characterName,
       currentStreamingExists: !!currentStreamingMessage.value
     })
-    // 不立即取消AI思考状态，让它继续到音频准备完成
 
-    // 关键修复：检查text是否为空
-    if (!text || text.trim() === '') {
-      console.warn('⚠️ 收到空文本，跳过更新')
+    const content = text ?? ''
+    const trimmed = content.trim()
+    const previousState = typewriterState.value
+    const wasComplete = previousState?.isComplete ?? false
+
+    if (!trimmed) {
       if (isComplete) {
-        // 如果流完成但文本为空，取消思考状态
         isAIThinking.value = false
-        currentStreamingMessage.value = null
+        if (previousState) {
+          previousState.isComplete = true
+          if (!previousState.started) {
+            scheduleTypewriterFallback()
+          }
+        } else if (currentStreamingMessage.value) {
+          currentStreamingMessage.value.isStreaming = false
+          currentStreamingMessage.value = null
+        }
       }
       return
     }
 
+    let state = typewriterState.value
+
     if (!currentStreamingMessage.value) {
-      // 创建一个临时的流式消息引用，但不添加到聊天列表
-      // 保持AI思考状态，直到音频准备完成
-      currentStreamingMessage.value = {
+      const newMessage: ChatMessage = {
         type: 'receive',
         content: '',
         senderType: 2,
         contentType: 1,
         createDate: new Date().toISOString(),
         isStreaming: true,
-        characterName: characterName || 'AI助手'
+        characterName: characterName || getCharacterName()
       }
 
-      console.log('✅ 创建临时AI消息引用，等待音频准备')
-      // 启动同步播放（等待音频），传入一个虚拟索引
-      startSyncPlayback(-1, text, false) // 使用-1表示临时消息
-
+      chats.value.push(newMessage)
+      currentStreamingMessage.value = newMessage
+      state = {
+        message: newMessage,
+        targetText: content,
+        currentIndex: 0,
+        intervalId: null,
+        isComplete,
+        started: false,
+        fallbackTimeoutId: null
+      }
+      typewriterState.value = state
+      isAIThinking.value = false
+      scrollToBottomWithRetry()
     } else {
-      // 更新现有消息的同步播放
-      console.log('✅ 更新AI消息同步播放，新内容长度:', text.length)
+      currentStreamingMessage.value.isStreaming = true
+      if (characterName) {
+        currentStreamingMessage.value.characterName = characterName
+      }
 
-      // 更新同步播放
-      startSyncPlayback(-1, text, false) // 继续等待音频
+      if (!state || state.message !== currentStreamingMessage.value) {
+        state = {
+          message: currentStreamingMessage.value,
+          targetText: content,
+          currentIndex: currentStreamingMessage.value.content.length,
+          intervalId: state?.intervalId ?? null,
+          isComplete: state?.isComplete ?? false,
+          started: state?.started ?? false,
+          fallbackTimeoutId: state?.fallbackTimeoutId ?? null
+        }
+        typewriterState.value = state
+      }
+    }
+
+    state = typewriterState.value
+    if (!state) return
+
+    state.targetText = content
+    state.isComplete = isComplete
+    state.currentIndex = Math.min(state.currentIndex, state.targetText.length)
+    if (!state.started) {
+      state.message.content = state.targetText.slice(0, state.currentIndex)
+    }
+    state.message.isStreaming = true
+
+    if (isComplete && !wasComplete && trimmed) {
+      voiceTranscripts.value.push({
+        speaker: 'ai',
+        text: trimmed,
+        timestamp: Date.now()
+      })
+      if (voiceTranscripts.value.length > 12) {
+        voiceTranscripts.value.splice(0, voiceTranscripts.value.length - 12)
+      }
+    }
+
+    if (isAISpeaking.value && !state.started) {
+      startTypewriterEffect()
     }
 
     if (isComplete) {
-      // 流式完成，但继续等待音频和打字机效果完成
-      console.log('🎯 LLM流式消息完成，等待音频和打字机效果完成...')
-
-      // 延迟重置状态，给音频准备足够时间
-      setTimeout(() => {
-        if (currentStreamingMessage.value && isAIThinking.value) {
-          // 如果音频还没准备好，清理状态
-          console.log('⏰ 音频准备超时，停止等待')
-          isAIThinking.value = false
-          currentStreamingMessage.value = null
-        }
-      }, 10000) // 最多等待10秒
+      scheduleTypewriterFallback()
     }
   })
 
-  // 音频播放状态回调 - 增强版本，支持同步播放
+  // 音频播放状态回调
   aiChat.value.onAudioPlay((isPlaying) => {
     console.log('🔊 音频播放状态:', isPlaying)
     isAISpeaking.value = isPlaying
 
-    // 当音频开始播放时，触发对应消息的同步播放
-    if (isPlaying && currentStreamingMessage.value) {
-      console.log('🎵 音频开始播放，触发同步打字机效果')
-      // 对于虚拟索引(-1)，使用特殊处理
-      onAudioReady(-1)
+    if (isPlaying) {
+      startTypewriterEffect()
+    } else if (typewriterState.value) {
+      if (!typewriterState.value.started) {
+        scheduleTypewriterFallback()
+      } else if (typewriterState.value.isComplete) {
+        finalizeTypewriter()
+      }
     }
   })
 }
@@ -604,8 +744,10 @@ const startAudioCall = async () => {
     }
 
     console.log('📞 开始音频通话')
+    await aiChat.value.prepareAudioPlayback()
     await aiChat.value.startAudioCall()
     isAudioCallActive.value = true
+    voiceTranscripts.value = []
 
     // 启动VAD状态监控
     startVADMonitoring()
@@ -651,6 +793,76 @@ const toggleMicrophone = async () => {
     console.error('❌ 切换麦克风状态失败:', error)
     ElMessage.error('切换麦克风状态失败')
   }
+}
+
+const clearTypewriterTimers = () => {
+  const state = typewriterState.value
+  if (!state) return
+
+  if (state.intervalId !== null) {
+    window.clearInterval(state.intervalId)
+    state.intervalId = null
+  }
+
+  if (state.fallbackTimeoutId !== null) {
+    window.clearTimeout(state.fallbackTimeoutId)
+    state.fallbackTimeoutId = null
+  }
+}
+
+const finalizeTypewriter = () => {
+  const state = typewriterState.value
+  if (!state) return
+
+  clearTypewriterTimers()
+  state.message.content = state.targetText
+  state.message.isStreaming = false
+  isAIThinking.value = false
+  typewriterState.value = null
+  currentStreamingMessage.value = null
+  scrollToBottomWithRetry()
+}
+
+const startTypewriterEffect = () => {
+  const state = typewriterState.value
+  if (!state || state.started) return
+
+  clearTypewriterTimers()
+  state.started = true
+  state.message.isStreaming = true
+  state.intervalId = window.setInterval(() => {
+    const targetLength = state.targetText.length
+    if (state.currentIndex < targetLength) {
+      state.currentIndex += 1
+      state.message.content = state.targetText.slice(0, state.currentIndex)
+      scrollToBottomWithRetry()
+    } else if (state.isComplete) {
+      finalizeTypewriter()
+    }
+  }, TYPEWRITER_SPEED)
+}
+
+const scheduleTypewriterFallback = () => {
+  const state = typewriterState.value
+  if (!state || state.started) return
+
+  if (state.fallbackTimeoutId !== null) return
+
+  state.fallbackTimeoutId = window.setTimeout(() => {
+    state.fallbackTimeoutId = null
+    startTypewriterEffect()
+  }, 500)
+}
+
+const resetTypewriterState = () => {
+  const state = typewriterState.value
+  if (!state) return
+
+  clearTypewriterTimers()
+  state.message.isStreaming = false
+  isAIThinking.value = false
+  typewriterState.value = null
+  currentStreamingMessage.value = null
 }
 
 // 修复: 强化版滚动到底部函数，带重试机制
@@ -725,156 +937,6 @@ const scrollToBottomWithRetry = (maxRetries: number = 3) => {
 // 兼容旧的滚动函数
 const scrollToBottom = () => {
   scrollToBottomWithRetry()
-}
-
-// 同步文字和音频播放
-const startSyncPlayback = (messageIndex: number, text: string, audioAvailable: boolean = false) => {
-  console.log('🎭 开始同步播放，消息索引:', messageIndex, '文字长度:', text.length, '音频可用:', audioAvailable)
-
-  if (audioAvailable) {
-    // 音频已准备好，立即开始打字机效果
-    console.log('🎵 音频已准备好，立即开始打字机效果')
-    startTypewriterEffect(messageIndex, text, 50)
-  } else {
-    // 音频还未准备好，保持AI思考状态，不显示任何文本
-    console.log('⏳ 音频未准备好，保持AI思考状态...')
-
-    // 不修改消息内容，让AI思考状态继续显示
-    // 移除消息，保持isAIThinking为true
-    if (messageIndex !== -1 && chats.value[messageIndex]) {
-      chats.value.splice(messageIndex, 1)
-    }
-
-    // 保持AI思考状态
-    isAIThinking.value = true
-
-    // 存储消息信息，等待音频准备完成
-    pendingAudioMessages.value.set(messageIndex, {
-      text,
-      characterName: currentStreamingMessage.value?.characterName || 'AI助手'
-    })
-
-    // 设置音频准备完成的回调
-    audioReadyCallbacks.value.set(messageIndex, () => {
-      console.log('🎵 音频准备完成，开始同步播放')
-
-      // 停止AI思考状态
-      isAIThinking.value = false
-
-      // 重新创建消息
-      const newMessage: ChatMessage = {
-        type: 'receive',
-        content: '', // 初始为空，打字机效果会填充
-        senderType: 2,
-        contentType: 1,
-        createDate: new Date().toISOString(),
-        isStreaming: true,
-        characterName: pendingAudioMessages.value.get(messageIndex)?.characterName || 'AI助手'
-      }
-
-      chats.value.push(newMessage)
-      const newIndex = chats.value.length - 1
-
-      // 开始打字机效果
-      startTypewriterEffect(newIndex, text, 50)
-
-      // 清理回调
-      audioReadyCallbacks.value.delete(messageIndex)
-      pendingAudioMessages.value.delete(messageIndex)
-    })
-  }
-}
-
-// 音频准备完成时调用此函数
-const onAudioReady = (messageIndex: number) => {
-  console.log('🔊 音频准备完成通知，消息索引:', messageIndex)
-
-  const callback = audioReadyCallbacks.value.get(messageIndex)
-  if (callback) {
-    callback()
-  } else {
-    console.log('⚠️ 未找到对应的音频回调，消息索引:', messageIndex)
-  }
-}
-
-// 清理同步播放相关状态
-const clearSyncPlaybackState = () => {
-  pendingAudioMessages.value.clear()
-  audioReadyCallbacks.value.clear()
-}
-
-// 打字机效果函数
-const startTypewriterEffect = (messageIndex: number, fullText: string, speed: number = 30) => {
-  // 清除可能存在的之前的定时器
-  const existingInterval = typewriterIntervals.value.get(messageIndex)
-  if (existingInterval) {
-    clearInterval(existingInterval)
-  }
-
-  // 初始化显示文本为空
-  typewriterDisplayTexts.value.set(messageIndex, '')
-
-  let currentIndex = 0
-  const interval = setInterval(() => {
-    if (currentIndex < fullText.length) {
-      const displayText = fullText.substring(0, currentIndex + 1)
-      typewriterDisplayTexts.value.set(messageIndex, displayText)
-
-      // 更新消息对象中的content
-      if (chats.value[messageIndex]) {
-        chats.value[messageIndex].content = displayText
-      }
-
-      currentIndex++
-
-      // 每次更新后滚动到底部
-      nextTick(() => {
-        scrollToBottomWithRetry()
-      })
-    } else {
-      // 打字完成，清除定时器并移除流式状态
-      clearInterval(interval)
-      typewriterIntervals.value.delete(messageIndex)
-      typewriterDisplayTexts.value.delete(messageIndex)
-
-      if (chats.value[messageIndex]) {
-        chats.value[messageIndex].isStreaming = false
-      }
-
-      // 最终滚动
-      nextTick(() => {
-        scrollToBottomWithRetry()
-      })
-    }
-  }, speed)
-
-  typewriterIntervals.value.set(messageIndex, interval)
-}
-
-// 停止打字机效果
-const stopTypewriterEffect = (messageIndex: number) => {
-  const interval = typewriterIntervals.value.get(messageIndex)
-  if (interval) {
-    clearInterval(interval)
-    typewriterIntervals.value.delete(messageIndex)
-    typewriterDisplayTexts.value.delete(messageIndex)
-  }
-
-  if (chats.value[messageIndex]) {
-    chats.value[messageIndex].isStreaming = false
-  }
-}
-
-// 清理所有打字机效果和同步播放状态
-const clearAllTypewriterEffects = () => {
-  typewriterIntervals.value.forEach((interval) => {
-    clearInterval(interval)
-  })
-  typewriterIntervals.value.clear()
-  typewriterDisplayTexts.value.clear()
-
-  // 清理同步播放状态
-  clearSyncPlaybackState()
 }
 
 // VAD监控相关函数
@@ -1006,11 +1068,22 @@ const formatTime = (dateString: string) => {
       border-radius: 50%;
       background-color: #ddd;
       flex-shrink: 0;
-    }
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
 
-    .name {
-      font-size: 0.14rem;
-      color: #999;
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .avatar-placeholder {
+        font-size: 0.2rem;
+        font-weight: 600;
+        color: #4a5568;
+      }
     }
 
     .content {
@@ -1025,9 +1098,8 @@ const formatTime = (dateString: string) => {
       display: inline-flex;
       align-items: baseline;
 
-      .text-prefix {
-        font-weight: 600;
-        margin-right: 0.04rem;
+      .text-content {
+        white-space: pre-wrap;
       }
 
       // 流式文本显示效果
@@ -1071,19 +1143,11 @@ const formatTime = (dateString: string) => {
     }
 
     .left {
-      .name {
-        text-align: right;
-      }
-
       .content {
         border-top-right-radius: 0;
         background-color: #007bff;
         color: white;
         border-color: #007bff;
-
-        .text-prefix {
-          color: rgba(255, 255, 255, 0.85);
-        }
       }
 
       .time {
@@ -1111,15 +1175,25 @@ const formatTime = (dateString: string) => {
     border-radius: 50%;
     background-color: #ddd;
     margin-right: 0.2rem;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .avatar-placeholder {
+      font-size: 0.2rem;
+      font-weight: 600;
+      color: #4a5568;
+    }
   }
 
   .thinking-content {
-    .name {
-      font-size: 0.14rem;
-      color: #999;
-      margin-bottom: 0.05rem;
-    }
-
     .thinking-dots {
       display: flex;
       gap: 0.05rem;
@@ -1859,6 +1933,60 @@ const formatTime = (dateString: string) => {
     font-weight: 500;
   }
 
+  &__transcripts {
+    margin-top: 24px;
+    width: min(520px, 80%);
+    max-height: 220px;
+    overflow-y: auto;
+    text-align: left;
+  }
+
+  &__transcripts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__transcript-item {
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 8px 20px rgba(148, 163, 184, 0.15);
+    font-size: 14px;
+    line-height: 1.6;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+
+    &.is-user {
+      background: rgba(59, 130, 246, 0.12);
+      color: #1d4ed8;
+    }
+
+    &.is-ai {
+      background: rgba(16, 185, 129, 0.12);
+      color: #047857;
+    }
+  }
+
+  &__transcript-speaker {
+    font-weight: 600;
+  }
+
+  &__transcript-text {
+    flex: 1;
+    color: inherit;
+  }
+
+  &__transcripts-empty {
+    padding: 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.65);
+    font-size: 14px;
+    color: rgba(71, 85, 105, 0.75);
+    text-align: center;
+  }
+
   &__controls {
     display: flex;
     gap: 28px;
@@ -1891,7 +2019,7 @@ const formatTime = (dateString: string) => {
     }
 
     :deep(.el-icon) {
-      font-size: 32px;
+      font-size: 38px;
       color: currentColor;
       display: flex;
     }
@@ -1958,8 +2086,12 @@ const formatTime = (dateString: string) => {
       height: 64px;
 
       :deep(.el-icon) {
-        font-size: 28px;
+        font-size: 32px;
       }
+    }
+
+    &__transcripts {
+      max-height: 180px;
     }
   }
 }

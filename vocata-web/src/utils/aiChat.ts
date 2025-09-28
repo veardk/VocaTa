@@ -37,6 +37,15 @@ interface TTSAudioMetaMessage extends WebSocketMessage {
   timestamp: number
 }
 
+interface TTSResultMessage extends WebSocketMessage {
+  type: 'tts_result'
+  text: string
+  format: string
+  sampleRate: number
+  voiceId?: string
+  timestamp: number
+}
+
 interface CompleteMessage extends WebSocketMessage {
   type: 'complete'
   message: string
@@ -266,6 +275,14 @@ export class AudioManager {
     }
   }
 
+  async preparePlayback(): Promise<void> {
+    try {
+      await this.ensureAudioContext()
+    } catch (error) {
+      console.warn('⚠️ 准备音频播放失败:', error)
+    }
+  }
+
   // 延迟初始化AudioContext，在用户交互后调用
   private async ensureAudioContext(): Promise<void> {
     if (!this.audioContext) {
@@ -278,6 +295,9 @@ export class AudioManager {
       }
 
       console.log('✅ 音频上下文初始化成功')
+    } else if (this.audioContext.state === 'suspended') {
+      console.log('🔄 音频上下文处于挂起状态，尝试恢复...')
+      await this.audioContext.resume()
     }
   }
 
@@ -699,6 +719,10 @@ export class VocaTaAIChat {
         this.handleLLMTextStream(message as LLMTextStreamMessage)
         break
 
+      case 'tts_result':
+        this.handleTTSResult(message as TTSResultMessage)
+        break
+
       case 'tts_audio_meta':
         this.handleTTSAudioMeta(message as TTSAudioMetaMessage)
         break
@@ -742,6 +766,14 @@ export class VocaTaAIChat {
     }
   }
 
+  private handleTTSResult(message: TTSResultMessage): void {
+    console.log(`🗣️ TTS最终文字: ${message.text} (格式: ${message.format}, 采样率: ${message.sampleRate})`)
+
+    if (message.text) {
+      this.onLLMStreamCallback?.(message.text, true, message.voiceId)
+    }
+  }
+
   private handleTTSAudioMeta(message: TTSAudioMetaMessage): void {
     console.log(`🔊 TTS音频元数据: ${message.audioSize} bytes, ${message.format}`)
   }
@@ -780,6 +812,14 @@ export class VocaTaAIChat {
     } catch (error) {
       console.error('❌ 无法启动录音:', error)
       throw error
+    }
+  }
+
+  async prepareAudioPlayback(): Promise<void> {
+    try {
+      await this.audioManager.preparePlayback()
+    } catch (error) {
+      console.warn('⚠️ 准备音频上下文失败:', error)
     }
   }
 

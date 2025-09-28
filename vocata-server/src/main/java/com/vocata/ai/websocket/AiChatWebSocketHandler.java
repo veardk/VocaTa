@@ -194,6 +194,39 @@ public class AiChatWebSocketHandler extends BinaryWebSocketHandler {
                                             if (audioData != null) {
                                                 sendTtsAudioStream(session, audioData);
                                             }
+                                        } else if ("tts_result".equals(responseType)) {
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, Object> ttsPayload = (Map<String, Object>) response.get("tts_result");
+                                            if (ttsPayload != null) {
+                                                byte[] audioData = (byte[]) ttsPayload.get("audioData");
+                                                String correspondingText = (String) ttsPayload.get("correspondingText");
+                                                Object audioFormatObj = ttsPayload.get("audioFormat");
+                                                String audioFormat = audioFormatObj instanceof String ?
+                                                        (String) audioFormatObj : "mp3";
+                                                Object sampleRateObj = ttsPayload.get("sampleRate");
+                                                int sampleRate = sampleRateObj instanceof Number ?
+                                                        ((Number) sampleRateObj).intValue() : 24000;
+                                                String voiceId = ttsPayload.get("voiceId") instanceof String ?
+                                                        (String) ttsPayload.get("voiceId") : null;
+
+                                                Map<String, Object> ttsResultMessage = new HashMap<>();
+                                                ttsResultMessage.put("type", "tts_result");
+                                                ttsResultMessage.put("text", correspondingText != null ? correspondingText : "");
+                                                ttsResultMessage.put("format", audioFormat);
+                                                ttsResultMessage.put("sampleRate", sampleRate);
+                                                if (voiceId != null) {
+                                                    ttsResultMessage.put("voiceId", voiceId);
+                                                }
+                                                ttsResultMessage.put("timestamp", System.currentTimeMillis());
+
+                                                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(ttsResultMessage)));
+
+                                                if (audioData != null && audioData.length > 0) {
+                                                    sendTtsAudioStream(session, audioData);
+                                                } else {
+                                                    logger.warn("【TTS阶段】TTS结果缺少音频数据");
+                                                }
+                                            }
                                         } else if ("complete".equals(responseType)) {
                                             sendStatusMessage(session, "语音处理完成");
                                         }

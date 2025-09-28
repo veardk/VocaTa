@@ -41,16 +41,17 @@ public class AiServiceConfig {
     public LlmProvider primaryLlmProvider(
             @Qualifier("qiniuLlmProvider") LlmProvider qiniuLlmProvider,
             @Qualifier("geminiLlmProvider") LlmProvider geminiLlmProvider,
-            @Qualifier("openAiLlmProvider") LlmProvider openAiLlmProvider) {
-        
+            @Qualifier("openAiLlmProvider") LlmProvider openAiLlmProvider,
+            @Qualifier("siliconFlowLlmProvider") LlmProvider siliconFlowLlmProvider) {
+
         logger.info("开始选择LLM提供者，首选: {}", preferredProvider);
 
         // 构建提供者列表
-        List<LlmProvider> providers = List.of(qiniuLlmProvider, geminiLlmProvider, openAiLlmProvider);
-        
+        List<LlmProvider> providers = List.of(qiniuLlmProvider, geminiLlmProvider, openAiLlmProvider, siliconFlowLlmProvider);
+
         // 记录检测到的提供者
         providers.forEach(provider -> {
-            logger.info("检测到LLM提供者: {} - 可用状态: {}", 
+            logger.info("检测到LLM提供者: {} - 可用状态: {}",
                 provider.getProviderName(), provider.isAvailable());
         });
 
@@ -62,7 +63,7 @@ public class AiServiceConfig {
         }
 
         // 如果首选提供者不可用，按优先级选择可用的提供者
-        String[] providerPriority = {"qiniu", "gemini", "openai"};
+        String[] providerPriority = {"qiniu", "gemini", "openai", "siliconflow"};
 
         for (String providerName : providerPriority) {
             LlmProvider provider = findProviderByName(providers, providerName);
