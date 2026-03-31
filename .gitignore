@@ -165,6 +165,7 @@ Desktop.ini
 
 # 文档生成
 **/.docs/
+**/.local/
 
 # 测试覆盖率报告
 **/coverage/

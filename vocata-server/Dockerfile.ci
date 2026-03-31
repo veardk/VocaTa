@@ -1,44 +1,29 @@
-# VocaTa后端服务 - CI/CD优化版Dockerfile
-# 针对CI/CD环境优化的单阶段构建
-
 FROM eclipse-temurin:17-jre-alpine
 
-# 安装必要工具和dumb-init
 RUN apk add --no-cache \
     curl \
-    tzdata \
+    dumb-init \
     font-noto-cjk \
-    dumb-init
+    tzdata
 
-# 设置时区
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 创建应用用户（安全最佳实践）
 RUN addgroup -g 1001 -S vocata && \
     adduser -u 1001 -S vocata -G vocata
 
-# 设置工作目录
 WORKDIR /app
 
-# 复制JAR文件（从CI/CD构建阶段）
-COPY vocata-server/target/vocata-server-*.jar app.jar
+COPY target/vocata-server-*.jar /app/app.jar
 
-# 创建必要目录并设置权限
 RUN mkdir -p /app/logs /app/uploads /var/log/vocata && \
-    chown -R vocata:vocata /app /var/log/vocata && \
-    chmod +x /app/app.jar
+    chown -R vocata:vocata /app /var/log/vocata
 
-# 切换到非root用户
 USER vocata
 
-# 暴露端口 - 支持不同环境
 EXPOSE 9009
-EXPOSE 9010
 
-# JVM优化参数 - 针对容器环境优化
-ENV JAVA_OPTS="-Xms256m -Xmx1024m \
--XX:+UseG1GC \
+ENV JAVA_OPTS="-XX:+UseG1GC \
 -XX:G1HeapRegionSize=16m \
 -XX:+DisableExplicitGC \
 -XX:+UseStringDeduplication \
@@ -48,25 +33,21 @@ ENV JAVA_OPTS="-Xms256m -Xmx1024m \
 -Dfile.encoding=UTF-8 \
 -Duser.timezone=Asia/Shanghai"
 
-# 应用配置环境变量
-ENV SPRING_PROFILES_ACTIVE=test
 ENV SERVER_PORT=9009
+ENV SPRING_PROFILES_ACTIVE=prod
 
-# 健康检查 - 支持动态端口
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/api/actuator/health || exit 1
+    CMD curl -f http://localhost:${SERVER_PORT}/api/health || exit 1
 
-# 启动应用 - 使用 dumb-init 处理信号
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
 
-# 构建参数和标签信息
 ARG BUILD_DATE
 ARG VERSION="1.0.0"
 LABEL maintainer="VocaTa Team <dev@vocata.com>" \
       version="${VERSION}" \
       build-date="${BUILD_DATE}" \
-      description="VocaTa AI角色扮演平台后端服务 - CI/CD版本" \
+      description="VocaTa AI角色扮演平台后端服务" \
       org.opencontainers.image.title="vocata-server" \
       org.opencontainers.image.description="VocaTa AI Role Playing Platform Backend Service" \
       org.opencontainers.image.url="https://github.com/leivik/vocata" \

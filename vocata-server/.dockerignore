@@ -38,6 +38,8 @@ out/
 dist/
 node_modules/
 .npm
+!target/
+!target/*.jar
 
 # 测试相关
 coverage/

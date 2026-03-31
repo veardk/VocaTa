@@ -466,7 +466,7 @@ jobs:
           case $service in
             "vocata-server")
               for i in {1..6}; do
-                if curl -f -m 10 "http://localhost:9009/api/actuator/health" > /dev/null 2>&1; then
+                if curl -f -m 10 "http://localhost:9009/api/health" > /dev/null 2>&1; then
                   echo "✓ 新的后端服务健康检查通过"
                   break
                 fi
@@ -504,7 +504,7 @@ jobs:
         for service in "${SERVICES_TO_UPDATE[@]}"; do
           case $service in
             "vocata-server")
-              if ! curl -f -m 30 "http://localhost:9009/api/actuator/health" > /dev/null 2>&1; then
+              if ! curl -f -m 30 "http://localhost:9009/api/health" > /dev/null 2>&1; then
                 echo "✗ 后端服务最终健康检查失败"
                 HEALTH_FAILED=true
               else
@@ -649,7 +649,7 @@ jobs:
 
         # API健康检查 (假设使用域名)
         echo "验证后端API..."
-        if curl -f -m 60 "https://api.vocata.com/api/actuator/health" > /dev/null 2>&1; then
+        if curl -f -m 60 "https://api.vocata.com/api/health" > /dev/null 2>&1; then
           echo "✅ 后端API验证通过" >> $GITHUB_STEP_SUMMARY
         else
           echo "❌ 后端API验证失败" >> $GITHUB_STEP_SUMMARY

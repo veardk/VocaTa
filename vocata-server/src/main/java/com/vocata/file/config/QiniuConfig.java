@@ -44,6 +44,11 @@ public class QiniuConfig {
     private String region;
 
     /**
+     * 对象 key 前缀，例如 Vocata
+     */
+    private String keyPrefix;
+
+    /**
      * 七牛云认证
      */
     @Bean
@@ -130,5 +135,13 @@ public class QiniuConfig {
 
     public void setRegion(String region) {
         this.region = region;
+    }
+
+    public String getKeyPrefix() {
+        return keyPrefix;
+    }
+
+    public void setKeyPrefix(String keyPrefix) {
+        this.keyPrefix = keyPrefix;
     }
 }

@@ -18,6 +18,8 @@ public class QiniuProperties {
 
     private String domain;
 
+    private String keyPrefix;
+
     private Long uploadTokenExpires = 3600L;
 
     public String getAccessKey() {
@@ -50,6 +52,14 @@ public class QiniuProperties {
 
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+    public String getKeyPrefix() {
+        return keyPrefix;
+    }
+
+    public void setKeyPrefix(String keyPrefix) {
+        this.keyPrefix = keyPrefix;
     }
 
     public Long getUploadTokenExpires() {

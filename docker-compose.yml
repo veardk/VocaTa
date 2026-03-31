@@ -1,20 +1,18 @@
-version: '3.8'
-
 services:
   # PostgreSQL 数据库
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg17
     container_name: vocata-postgres-dev
     environment:
-      POSTGRES_DB: vocata_local
-      POSTGRES_USER: vocata
-      POSTGRES_PASSWORD: vocata123
+      POSTGRES_DB: ${POSTGRES_DB:-vocata_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vocata -d vocata_local"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-vocata_db}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -24,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: vocata-redis-dev
     ports:
-      - "6379:6379"
+      - "${REDIS_EXPOSE_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -38,17 +36,47 @@ services:
     build:
       context: ./vocata-server
       dockerfile: Dockerfile
+      args:
+        SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
     container_name: vocata-server-dev
     ports:
-      - "9009:9009"
+      - "${SERVER_PORT:-9009}:9009"
     environment:
-      SPRING_PROFILES_ACTIVE: local
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vocata_local
-      SPRING_DATASOURCE_USERNAME: vocata
-      SPRING_DATASOURCE_PASSWORD: vocata123
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: 6379
-      SPRING_REDIS_DATABASE: 0
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      SERVER_PORT: 9009
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-vocata_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres123}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      AI_LLM_PROVIDER: ${AI_LLM_PROVIDER:-qiniu}
+      AI_STT_PROVIDER: ${AI_STT_PROVIDER:-qiniu}
+      AI_TTS_PROVIDER: ${AI_TTS_PROVIDER:-xunfei}
+      XUNFEI_TTS_APP_ID: ${XUNFEI_TTS_APP_ID:-}
+      XUNFEI_TTS_API_KEY: ${XUNFEI_TTS_API_KEY:-}
+      XUNFEI_TTS_SECRET_KEY: ${XUNFEI_TTS_SECRET_KEY:-}
+      QINIU_ACCESS_KEY: ${QINIU_ACCESS_KEY:-}
+      QINIU_SECRET_KEY: ${QINIU_SECRET_KEY:-}
+      QINIU_BUCKET: ${QINIU_BUCKET:-}
+      QINIU_DOMAIN: ${QINIU_DOMAIN:-}
+      QINIU_REGION: ${QINIU_REGION:-huadong}
+      QINIU_KEY_PREFIX: ${QINIU_KEY_PREFIX:-}
+      QINIU_AI_API_KEY: ${QINIU_AI_API_KEY:-}
+      QINIU_AI_BASE_URL: ${QINIU_AI_BASE_URL:-https://openai.qiniu.com/v1}
+      QINIU_AI_MODEL: ${QINIU_AI_MODEL:-x-ai/grok-4-fast}
+      QINIU_AI_TIMEOUT: ${QINIU_AI_TIMEOUT:-60}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-3.5-turbo}
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SILICONFLOW_AI_MODEL: ${SILICONFLOW_AI_MODEL:-Qwen/Qwen3-8B}
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,36 +96,51 @@ services:
     build:
       context: ./vocata-web
       dockerfile: Dockerfile
+      args:
+        BUILD_MODE: ${WEB_BUILD_MODE:-production}
+        VITE_APP_URL: ${VITE_APP_URL:-http://localhost:9009}
     container_name: vocata-web-dev
     ports:
-      - "3000:80"
-    environment:
-      VITE_API_BASE_URL: http://localhost:9009/api
+      - "${WEB_PORT:-3000}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     depends_on:
-      - vocata-server
+      vocata-server:
+        condition: service_healthy
 
   # 管理后台
   vocata-admin:
     build:
       context: ./vocata-admin
       dockerfile: Dockerfile
+      args:
+        BUILD_MODE: ${ADMIN_BUILD_MODE:-production}
+        VITE_APP_URL: ${VITE_APP_URL:-http://localhost:9009}
     container_name: vocata-admin-dev
     ports:
-      - "3001:80"
-    environment:
-      VITE_API_BASE_URL: http://localhost:9009/api
+      - "${ADMIN_PORT:-3001}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     depends_on:
-      - vocata-server
+      vocata-server:
+        condition: service_healthy
 
   # pgAdmin (数据库管理工具)
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: vocata-pgadmin-dev
+    profiles: ["tools"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@vocata.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@vocata.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin123}
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     depends_on:
       - postgres
 
@@ -105,9 +148,10 @@ services:
   mailhog:
     image: mailhog/mailhog:latest
     container_name: vocata-mailhog-dev
+    profiles: ["tools"]
     ports:
-      - "1025:1025"  # SMTP端口
-      - "8025:8025"  # Web界面端口
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_WEB_PORT:-8025}:8025"
 
 volumes:
   postgres_data:
@@ -115,4 +159,4 @@ volumes:
 
 networks:
   default:
-    name: vocata-dev-network
+    name: ${COMPOSE_PROJECT_NAME:-vocata-dev}-network

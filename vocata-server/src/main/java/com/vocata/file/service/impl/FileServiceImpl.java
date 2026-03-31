@@ -289,11 +289,13 @@ public class FileServiceImpl implements FileService {
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String uuid = IdUtil.simpleUUID();
 
-        return String.format("%s/%s/%s%s",
+        String objectKey = String.format("%s/%s/%s%s",
                 StringUtils.isNotBlank(fileType) ? fileType : "common",
                 dateStr,
                 uuid,
                 extension);
+
+        return prependKeyPrefix(objectKey);
     }
 
     /**
@@ -310,10 +312,26 @@ public class FileServiceImpl implements FileService {
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String uuid = IdUtil.simpleUUID();
 
-        return String.format("%s/%s/%s%s",
+        String objectKey = String.format("%s/%s/%s%s",
                 StringUtils.isNotBlank(fileType) ? fileType : "audio",
                 dateStr,
                 uuid,
                 extension);
+
+        return prependKeyPrefix(objectKey);
+    }
+
+    private String prependKeyPrefix(String objectKey) {
+        String keyPrefix = qiniuConfig.getKeyPrefix();
+        if (StringUtils.isBlank(keyPrefix)) {
+            return objectKey;
+        }
+
+        String normalizedPrefix = StringUtils.strip(keyPrefix, "/");
+        if (StringUtils.isBlank(normalizedPrefix)) {
+            return objectKey;
+        }
+
+        return normalizedPrefix + "/" + objectKey;
     }
 }
