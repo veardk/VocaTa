@@ -41,15 +41,16 @@
 </template>
 
 <script setup lang="ts">
+import type { roleInfo } from '@/types/common'
 import { isMobile } from '@/utils/isMobile'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatHistoryStore } from '@/store'
 import { ElMessage } from 'element-plus'
 
-const { item } = defineProps({
-  item: Object,
-})
+const { item } = defineProps<{
+  item: roleInfo
+}>()
 
 const emit = defineEmits(['close'])
 const router = useRouter()
@@ -59,14 +60,14 @@ const isM = computed(() => isMobile())
 const tagsList = computed(() => {
   if (!item.tags) return []
 
-  let tags = []
+  let tags: string[] = []
 
   // 如果tags是字符串，尝试按逗号分割
   if (typeof item.tags === 'string') {
     tags = item.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
   } else if (Array.isArray(item.tags)) {
     // 如果已经是数组，直接使用
-    tags = item.tags
+    tags = item.tags.filter((tag): tag is string => typeof tag === 'string')
   } else {
     return []
   }

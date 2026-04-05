@@ -154,7 +154,7 @@
       </div>
     </div>
 
-    <RoleDialog :item="roleSelected" v-if="infoShow" @close="infoShow = false" />
+    <RoleDialog :item="roleSelected" v-if="infoShow && roleSelected" @close="infoShow = false" />
   </div>
 </template>
 
@@ -165,7 +165,7 @@ import type { roleInfo } from '@/types/common'
 import debounce from '@/types/debounce'
 import { isMobile } from '@/utils/isMobile'
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatHistoryStore } from '@/store'
@@ -178,7 +178,6 @@ const roleSelected = ref<roleInfo>()
 const searchInput = ref('')
 const roleList: Ref<roleInfo[]> = ref([])
 const selectRoleList: Ref<roleInfo[]> = ref([])
-const myRoleList: Ref<roleInfo[]> = ref([])
 const cardFace = ref([0, 0, 0, 0, 0])
 const searchParam: Ref<PublicRoleQuery> = ref({
   pageNum: 1,

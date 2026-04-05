@@ -1,51 +1,36 @@
-# VocaTa前端客户端 - 多阶段构建Dockerfile
-# 基于Node.js官方镜像
-
-# 构建阶段
 FROM node:20-alpine AS build
 
-# 安装必要的构建工具
 RUN apk add --no-cache python3 make g++ git
 
-# 设置工作目录
 WORKDIR /app
 
-# 复制package文件
 COPY package*.json ./
+RUN npm ci && npm cache clean --force
 
-# 安装依赖
-RUN npm ci --only=production && npm cache clean --force
-
-# 复制源代码
 COPY . .
 
-# 构建应用
 ARG BUILD_MODE=production
+ARG VITE_APP_URL
+ENV VITE_APP_URL=${VITE_APP_URL}
 RUN npm run build:${BUILD_MODE}
 
-# 生产阶段 - 使用Nginx托管静态文件
 FROM nginx:1.25-alpine
 
-# 安装必要工具
 RUN apk add --no-cache \
     curl \
-    tzdata \
-    dumb-init
+    dumb-init \
+    tzdata
 
-# 设置时区
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 创建nginx用户和目录
 RUN addgroup -g 1001 -S vocata && \
     adduser -u 1001 -S vocata -G vocata && \
     mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx && \
     chown -R vocata:vocata /var/cache/nginx /var/log/nginx /var/lib/nginx /etc/nginx
 
-# 复制构建产物
 COPY --from=build --chown=vocata:vocata /app/dist /usr/share/nginx/html
 
-# 创建Nginx配置文件
 RUN cat > /etc/nginx/nginx.conf << 'EOF'
 worker_processes auto;
 error_log /var/log/nginx/error.log;
@@ -115,7 +100,6 @@ http {
             add_header Cache-Control "public, immutable";
         }
 
-        # API代理（如果需要）
         location /api {
             proxy_pass http://vocata-server:9009;
             proxy_set_header Host $host;
@@ -134,20 +118,15 @@ http {
 }
 EOF
 
-# 设置权限
 RUN chown -R vocata:vocata /usr/share/nginx/html /etc/nginx
 
-# 切换到非root用户
 USER vocata
 
-# 暴露端口
 EXPOSE 8080
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# 构建参数和标签
 ARG BUILD_DATE
 ARG VERSION="1.0.0"
 LABEL maintainer="VocaTa Team <dev@vocata.com>" \
@@ -161,6 +140,5 @@ LABEL maintainer="VocaTa Team <dev@vocata.com>" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
-# 启动Nginx
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["nginx", "-g", "daemon off;"]

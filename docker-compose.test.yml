@@ -1,5 +1,4 @@
 # VocaTa测试环境 Docker Compose 配置
-version: '3.8'
 
 x-app-common: &app-common
   restart: unless-stopped
@@ -43,6 +42,7 @@ services:
       - QINIU_BUCKET=${QINIU_BUCKET}
       - QINIU_DOMAIN=${QINIU_DOMAIN}
       - QINIU_REGION=${QINIU_REGION}
+      - QINIU_KEY_PREFIX=${QINIU_KEY_PREFIX}
       # 邮箱配置
       - EMAIL_USER_NAME=${EMAIL_USER_NAME}
       - EMAIL_USER_PASSWORD=${EMAIL_USER_PASSWORD}
@@ -53,18 +53,42 @@ services:
       - MAIL_PASSWORD=${EMAIL_USER_PASSWORD}
       # AI服务配置
       - AI_LLM_PROVIDER=${AI_LLM_PROVIDER:-qiniu}
+      - AI_STT_PROVIDER=${AI_STT_PROVIDER:-qiniu}
+      - AI_TTS_PROVIDER=${AI_TTS_PROVIDER:-xunfei}
       - QINIU_AI_API_KEY=${QINIU_AI_API_KEY}
       - QINIU_AI_BASE_URL=${QINIU_AI_BASE_URL:-https://openai.qiniu.com/v1}
       - QINIU_AI_MODEL=${QINIU_AI_MODEL:-x-ai/grok-4-fast}
       - QINIU_AI_TIMEOUT=${QINIU_AI_TIMEOUT:-60}
+      - QINIU_STT_ENDPOINT=${QINIU_STT_ENDPOINT:-https://openai.qiniu.com/v1}
+      - QINIU_STT_MODEL=${QINIU_STT_MODEL:-asr}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash-lite}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - SILICONFLOW_BASE_URL=${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn/v1}
+      - SILICONFLOW_AI_MODEL=${SILICONFLOW_AI_MODEL:-Qwen/Qwen3-8B}
+      - SILICONFLOW_TIMEOUT=${SILICONFLOW_TIMEOUT:-120}
+      - XUNFEI_STT_APP_ID=${XUNFEI_STT_APP_ID}
+      - XUNFEI_STT_API_KEY=${XUNFEI_STT_API_KEY}
+      - XUNFEI_STT_SECRET_KEY=${XUNFEI_STT_SECRET_KEY}
+      - XUNFEI_STT_HOST=${XUNFEI_STT_HOST:-iat-api.xfyun.cn}
+      - XUNFEI_STT_PATH=${XUNFEI_STT_PATH:-/v2/iat}
+      - XUNFEI_TTS_APP_ID=${XUNFEI_TTS_APP_ID}
+      - XUNFEI_TTS_API_KEY=${XUNFEI_TTS_API_KEY}
+      - XUNFEI_TTS_SECRET_KEY=${XUNFEI_TTS_SECRET_KEY}
+      - XUNFEI_TTS_HOST=${XUNFEI_TTS_HOST:-tts-api.xfyun.cn}
+      - XUNFEI_TTS_PATH=${XUNFEI_TTS_PATH:-/v2/tts}
+      - VOLCAN_TTS_ACCESS_TOKEN=${VOLCAN_TTS_ACCESS_TOKEN}
+      - VOLCAN_TTS_APP_ID=${VOLCAN_TTS_APP_ID}
+      - VOLCAN_TTS_HOST=${VOLCAN_TTS_HOST:-openspeech.bytedance.com}
+      - VOLCAN_TTS_REGION=${VOLCAN_TTS_REGION:-ap-beijing-1}
 
     volumes:
       - server-logs:/var/log/vocata
       - server-uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9009/api/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9009/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

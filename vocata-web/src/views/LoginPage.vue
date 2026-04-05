@@ -44,7 +44,7 @@
 
             <!-- 注册表单 -->
             <template v-if="isRegisterTab">
-              <el-input v-model="registerForm.username" placeholder="请输入用户名" size="large" />
+              <el-input v-model="registerForm.nickname" placeholder="请输入用户名" size="large" />
               <el-input v-model="registerForm.email" placeholder="请输入邮箱" size="large" />
               <el-input
                 v-model="registerForm.password"
@@ -113,7 +113,7 @@ const loginForm = ref<LoginParams>({
 })
 
 const registerForm = ref<RegisterParams>({
-  username: '',
+  nickname: '',
   password: '',
   confirmPassword: '',
   email: '',
@@ -186,9 +186,9 @@ const handleLogin = async (): Promise<void> => {
 
 // 注册表单确认（发送验证码前）
 const validateRegisterForm = (): boolean => {
-  const { username, email, password, confirmPassword } = registerForm.value
+  const { nickname, email, password, confirmPassword } = registerForm.value
 
-  if (!username.trim()) {
+  if (!nickname.trim()) {
     ElMessage.error('请输入用户名')
     return false
   }

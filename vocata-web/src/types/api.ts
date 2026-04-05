@@ -34,7 +34,39 @@ export interface RegisterParams {
 // 登录响应数据
 export interface LoginResponse {
   token: string,
-  expiresIn: number
+  expiresIn: number,
+  user?: {
+    nickname?: string
+  }
+}
+
+export interface CreateCharacterRequest {
+  name: string
+  description: string
+  greeting: string
+  isPublic: boolean
+  persona: string
+  voiceId: string
+  avatarUrl: string
+}
+
+export interface CreateCharacterResponse {
+  id: string | number
+}
+
+export interface TtsVoiceOption {
+  name: string
+  [key: string]: unknown
+}
+
+export interface AiGenerateRoleRequest {
+  name: string
+  description: string
+  greeting: string
+}
+
+export interface AiGenerateRoleResponse {
+  persona: string
 }
 
 // 用户信息响应数据
@@ -108,6 +140,6 @@ export interface MessageResponse {
   audioUrl: string | null,
   llmModelId: string,
   ttsVoiceId: string | null,
-  metadata: Record<string, any>,
+  metadata: Record<string, unknown>,
   createDate: string
 }

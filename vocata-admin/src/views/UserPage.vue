@@ -102,15 +102,28 @@
 import { userApi } from '@/api/modules/user'
 import { ElMessage } from 'element-plus'
 import { onMounted, ref } from 'vue'
+
+type UserRow = {
+  id: number
+  username: string
+  email: string
+  nickname: string
+  avatar: string
+  gender: number
+  birthday?: string
+  createDate: string
+  status: number
+}
+
 const dialogVisible = ref(false)
 const dialogType = ref('add') // 'add' 或 'edit'
-const users = ref([])
+const users = ref<UserRow[]>([])
 const formData = ref({
   userId: '',
   userAccount: '',
   userPassword: '',
   userPhone: '',
-  userType: '',
+  userType: 0,
   sellerName: '',
   status: '',
 })
@@ -124,31 +137,11 @@ const getUsers = async () => {
     const res = await userApi.getUserInfo(query.value)
     users.value = res.data.list
     total.value = res.data.total
-  } catch (error) {
+  } catch {
     ElMessage.error('获取数据失败')
   }
 }
 
-// 新增用户
-const handleAddUser = () => {
-  dialogType.value = 'add'
-  dialogVisible.value = true
-  formData.value = {
-    userId: '',
-    userAccount: '',
-    userPassword: '',
-    userPhone: '',
-    userType: 0,
-    sellerName: '',
-  }
-}
-// 编辑用户
-const handleEditUser = (user) => {
-  dialogType.value = 'edit'
-  dialogVisible.value = true
-  const userType = user.userType == '普通用户' ? 0 : 1
-  formData.value = { ...user, userType }
-}
 const confirm = async () => {
   if (!formData.value.userId) {
     try {
@@ -167,7 +160,7 @@ const confirm = async () => {
       // ElMessage.success('修改成功')
       // getUsers()
       // dialogVisible.value = false
-    } catch (error) {
+    } catch {
       ElMessage.success('修改失败')
       dialogVisible.value = false
     }
@@ -175,21 +168,13 @@ const confirm = async () => {
 }
 
 // 修改用户状态
-const updateStatus = async (id, status) => {
+const updateStatus = async (id: number, status: number) => {
   try {
     await userApi.updateUserStatus(id, { status })
     ElMessage.success('修改成功')
     getUsers()
-  } catch (error) {
+  } catch {
     ElMessage.error('修改失败')
-  }
-}
-const deleteUser = async (id) => {
-  try {
-    ElMessage.success('删除成功')
-    getUsers()
-  } catch (error) {
-    ElMessage.error('删除数据失败')
   }
 }
 onMounted(() => {

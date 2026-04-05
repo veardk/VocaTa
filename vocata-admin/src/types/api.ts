@@ -34,7 +34,10 @@ export interface RegisterParams {
 // 登录响应数据
 export interface LoginResponse {
   token: string,
-  expiresIn: number
+  expiresIn: number,
+  user?: {
+    nickname?: string
+  }
 }
 
 // 修改密码参数
@@ -48,4 +51,28 @@ export interface Response<T> {
   code: number,
   message: string,
   data: T
+}
+
+export interface AdminUserInfo {
+  id: number
+  username: string
+  email: string
+  nickname: string
+  avatar: string
+  gender: number
+  birthday?: string
+  createDate: string
+  status: number
+}
+
+export interface PaginatedList<T> {
+  list: T[]
+  total: number
+}
+
+export interface AdminProfileResponse {
+  user: {
+    nickname: string
+    avatar: string
+  }
 }

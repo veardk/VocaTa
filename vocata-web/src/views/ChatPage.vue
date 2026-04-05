@@ -153,7 +153,7 @@ import { ElMessage } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ChatMessage } from '@/types/common'
-import type { MessageResponse } from '@/types/api'
+import type { ConversationResponse, MessageResponse } from '@/types/api'
 import { VocaTaAIChat } from '@/utils/aiChat'
 import { getToken } from '@/utils/token'
 
@@ -166,7 +166,7 @@ const input = ref('')
 const router = useRouter()
 const route = useRoute()
 const conversationUuid = computed(() => route.params.conversationUuid as string)
-const currentConversation = ref<any>(null)
+const currentConversation = ref<ConversationResponse | null>(null)
 
 const userAvatar = ref('')
 const userNickname = ref('')
@@ -345,7 +345,7 @@ const loadRecentMessages = async (limit: number = 20) => {
             senderType: 2,
             contentType: 1,
             createDate: new Date().toISOString(),
-            characterName: currentConversation.value.characterName,
+            characterName: currentConversation.value?.characterName || getCharacterName(),
             metadata: { isGreeting: true }
           }]
         }
@@ -366,40 +366,6 @@ const loadRecentMessages = async (limit: number = 20) => {
   } catch (error) {
     console.error('加载消息失败:', error)
     ElMessage.error('加载消息失败')
-  } finally {
-    isLoadingMessages.value = false
-  }
-}
-
-// 加载更多历史消息
-const loadMoreHistory = async (limit: number = 20) => {
-  if (!conversationUuid.value || isLoadingMessages.value || !hasMoreHistory.value) return
-
-  try {
-    isLoadingMessages.value = true
-    const res = await conversationApi.getHistoryMessages(
-      conversationUuid.value,
-      currentOffset.value,
-      limit
-    )
-    if (res.code === 200) {
-      if (res.data.length === 0) {
-        hasMoreHistory.value = false
-        return
-      }
-
-      const messages = convertMessagesToChatFormat(res.data)
-      // 将历史消息添加到列表开头
-      chats.value = [...messages.reverse(), ...chats.value]
-      currentOffset.value += res.data.length
-
-      if (res.data.length < limit) {
-        hasMoreHistory.value = false
-      }
-    }
-  } catch (error) {
-    console.error('加载历史消息失败:', error)
-    ElMessage.error('加载历史消息失败')
   } finally {
     isLoadingMessages.value = false
   }
@@ -471,13 +437,11 @@ const loadConversationInfo = async () => {
     const res = await conversationApi.getConversationList()
     if (res.code === 200) {
       // 从最新的对话列表中查找当前对话
-      const conversation = res.data.find(
-        (conv: any) => conv.conversationUuid === conversationUuid.value
-      )
+      const conversation = res.data.find((conv) => conv.conversationUuid === conversationUuid.value)
 
       if (!conversation) {
         console.warn('⚠️ 在对话列表中找不到当前对话UUID:', conversationUuid.value)
-        console.log('📋 可用的对话列表:', res.data.map((c: any) => ({
+        console.log('📋 可用的对话列表:', res.data.map((c) => ({
           uuid: c.conversationUuid,
           title: c.title,
           characterName: c.characterName
@@ -574,7 +538,7 @@ const setupAIChatCallbacks = () => {
   if (!aiChat.value) return
 
   // 连接状态回调
-  aiChat.value.onConnectionStatus((status, message) => {
+  aiChat.value.onConnectionStatus((status) => {
     switch (status) {
       case 'connected':
         connectionStatus.value = '已连接到AI服务'
@@ -954,11 +918,6 @@ const scrollToBottomWithRetry = (maxRetries: number = 3) => {
   })
 }
 
-// 兼容旧的滚动函数
-const scrollToBottom = () => {
-  scrollToBottomWithRetry()
-}
-
 // VAD监控相关函数
 const startVADMonitoring = () => {
   if (vadCheckInterval.value) {
@@ -966,11 +925,7 @@ const startVADMonitoring = () => {
   }
 
   vadCheckInterval.value = window.setInterval(() => {
-    // 检查aiChat的audioManager是否有VAD状态
-    if (aiChat.value && (aiChat.value as any).audioManager) {
-      const audioManager = (aiChat.value as any).audioManager
-      vadActive.value = audioManager.voiceActive || false
-    }
+    vadActive.value = aiChat.value?.voiceActive ?? false
   }, 100) // 每100ms检查一次VAD状态
 }
 

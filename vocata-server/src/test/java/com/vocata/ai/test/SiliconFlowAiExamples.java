@@ -18,7 +18,7 @@ import java.util.List;
  */
 @SpringBootTest
 @ActiveProfiles("local")
-public class SiliconFlowAiTest {
+public class SiliconFlowAiExamples {
 
     /**
      * 测试案例1：基本的单轮对话

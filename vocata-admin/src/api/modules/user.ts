@@ -1,5 +1,22 @@
-import type { LoginParams, RegisterParams, Response, LoginResponse } from '@/types/api'
+import type {
+  AdminProfileResponse,
+  AdminUserInfo,
+  LoginParams,
+  LoginResponse,
+  PaginatedList,
+  RegisterParams,
+  Response,
+} from '@/types/api'
 import request from '../request'
+
+type UserListQuery = {
+  pageNum: number
+  pageSize: number
+}
+
+type UpdateStatusParams = {
+  status: number
+}
 
 export const userApi = {
   // 登录
@@ -20,17 +37,17 @@ export const userApi = {
     return request.post('/api/client/auth/logout')
   },
   // 获取用户信息
-  getUserInfo(params): Promise<Response<null>> {
-    return request.get('/api/admin/user/list', params)
+  getUserInfo(params: UserListQuery): Promise<Response<PaginatedList<AdminUserInfo>>> {
+    return request.get('/api/admin/user/list', { params })
   },
 
   // 修改用户状态
-  updateUserStatus(id, params): Promise<Response<null>> {
+  updateUserStatus(id: number, params: UpdateStatusParams): Promise<Response<null>> {
     return request.put(`/api/admin/user/${id}/status`, params)
   },
 
   // 获取管理员信息
-  getAdminInfo(): Promise<Response<null>> {
+  getAdminInfo(): Promise<Response<AdminProfileResponse>> {
     return request.get('/api/admin/auth/current')
   },
 }

@@ -46,9 +46,8 @@ import { userApi } from '@/api/modules/user'
 import { setToken } from '@/utils/token'
 import { ElMessage, ElNotification } from 'element-plus'
 import { reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 const router = useRouter()
-const route = useRoute()
 const btnState = ref(false)
 const apiForm = reactive({
   loginName: '',
@@ -81,7 +80,7 @@ const login = async () => {
     if (res.message == '登录成功') {
       ElNotification({
         title: '登录成功',
-        message: '欢迎用户，' + res.data.user.nickname + '！',
+        message: '欢迎用户，' + (res.data.user?.nickname || apiForm.loginName) + '！',
         type: 'success',
       })
       setToken(res.data.token, res.data.expiresIn)

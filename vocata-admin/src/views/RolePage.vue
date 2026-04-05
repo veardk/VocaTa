@@ -84,11 +84,21 @@
 import { roleApi } from '@/api/modules/role'
 import { ElMessage } from 'element-plus'
 import { onMounted, ref, watch } from 'vue'
+
+type RoleRow = {
+  id: number
+  name: string
+  avatarUrl?: string
+  tags?: string
+  userType?: string | number
+  [key: string]: unknown
+}
+
 const dialogVisible = ref(false)
 const dialogType = ref('add') // 'add' 或 'edit'
-const users = ref([])
-const formData = ref({
-  id: '',
+const users = ref<RoleRow[]>([])
+const formData = ref<RoleRow>({
+  id: 0,
   name: '',
 })
 const query = ref({
@@ -101,7 +111,7 @@ const getRoles = async () => {
     const res = await roleApi.getRoleList(query.value)
     users.value = res.data.list
     total.value = res.data.total
-  } catch (error) {
+  } catch {
     ElMessage.error('获取数据失败')
   }
 }
@@ -117,10 +127,13 @@ watch(
 const handleAddUser = () => {
   dialogType.value = 'add'
   dialogVisible.value = true
-  formData.value = {}
+  formData.value = {
+    id: 0,
+    name: '',
+  }
 }
 // 编辑用户
-const handleEditUser = (user) => {
+const handleEditUser = (user: RoleRow) => {
   dialogType.value = 'edit'
   dialogVisible.value = true
   const userType = user.userType == '普通用户' ? 0 : 1
@@ -144,18 +157,18 @@ const confirm = async () => {
       // ElMessage.success('修改成功')
       // getUsers()
       // dialogVisible.value = false
-    } catch (error) {
+    } catch {
       ElMessage.success('修改失败')
       dialogVisible.value = false
     }
   }
 }
-const deleteUser = async (id) => {
+const deleteUser = async (id: number) => {
   try {
     await roleApi.deleteRole(id)
     ElMessage.success('删除成功')
     getRoles()
-  } catch (error) {
+  } catch {
     ElMessage.error('删除数据失败')
   }
 }

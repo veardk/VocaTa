@@ -5,10 +5,16 @@
 
 import { getToken } from './token'
 
+type EventCallback = (data?: unknown) => void
+
+interface WindowWithWebkitAudio extends Window {
+  webkitAudioContext?: typeof AudioContext
+}
+
 // WebSocket消息类型定义
-interface WebSocketMessage {
+export interface WebSocketMessage {
   type: string
-  [key: string]: any
+  [key: string]: unknown
 }
 
 interface STTResultMessage extends WebSocketMessage {
@@ -64,7 +70,7 @@ export class VocaTaWebSocketClient {
   private conversationUuid: string
   private reconnectAttempts = 0
   private readonly maxReconnectAttempts = 5
-  private callbacks: Map<string, Function[]> = new Map()
+  private callbacks: Map<string, EventCallback[]> = new Map()
   private manualClose = false
 
   constructor(conversationUuid: string) {
@@ -135,7 +141,7 @@ export class VocaTaWebSocketClient {
         const message: WebSocketMessage = JSON.parse(event.data)
         console.log(`📨 收到消息:`, message)
         this.emit('message', message)
-      } catch (e) {
+      } catch {
         console.error('❌ 解析消息失败:', event.data)
       }
     }
@@ -207,14 +213,14 @@ export class VocaTaWebSocketClient {
   }
 
   // 事件监听器
-  on(event: string, callback: Function): void {
+  on<T = unknown>(event: string, callback: (data: T) => void): void {
     if (!this.callbacks.has(event)) {
       this.callbacks.set(event, [])
     }
-    this.callbacks.get(event)?.push(callback)
+    this.callbacks.get(event)?.push(callback as EventCallback)
   }
 
-  private emit(event: string, data?: any): void {
+  private emit(event: string, data?: unknown): void {
     const callbacks = this.callbacks.get(event)
     if (callbacks) {
       callbacks.forEach(callback => callback(data))
@@ -272,7 +278,7 @@ export class AudioManager {
   private currentWsClient: VocaTaWebSocketClient | null = null
   private stopRecordingPromise: Promise<void> | null = null
   private stopRecordingResolve?: () => void
-  private stopRecordingReject?: (reason?: any) => void
+  private stopRecordingReject?: (reason?: unknown) => void
   private playbackStateListener?: (isPlaying: boolean) => void
 
   async initialize(): Promise<void> {
@@ -298,7 +304,12 @@ export class AudioManager {
   private async ensureAudioContext(): Promise<void> {
     if (!this.audioContext) {
       console.log('🎵 延迟初始化音频上下文...')
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const AudioContextConstructor =
+        window.AudioContext || (window as WindowWithWebkitAudio).webkitAudioContext
+      if (!AudioContextConstructor) {
+        throw new Error('当前浏览器不支持 AudioContext')
+      }
+      this.audioContext = new AudioContextConstructor()
 
       // 检查音频上下文状态
       if (this.audioContext.state === 'suspended') {
@@ -613,8 +624,6 @@ export class VocaTaAIChat {
   private wsClient: VocaTaWebSocketClient | null = null
   private audioManager: AudioManager
   private isAudioCallActive = false
-  private currentConversation: any = null
-  private currentCharacter: any = null
   private conversationUuid: string | null = null
   private connectingPromise: Promise<void> | null = null
 
@@ -623,7 +632,7 @@ export class VocaTaAIChat {
   private currentSTTText = ''
 
   // 回调函数
-  private onMessageCallback?: (message: any) => void
+  private onMessageCallback?: (message: WebSocketMessage) => void
   private onSTTResultCallback?: (text: string, isFinal: boolean) => void
   private onLLMStreamCallback?: (text: string, isComplete: boolean, characterName?: string) => void
   private onAudioPlayCallback?: (isPlaying: boolean) => void
@@ -684,8 +693,12 @@ export class VocaTaAIChat {
         this.handleWebSocketMessage(message)
 
         // 如果收到状态消息表示连接已建立，则resolve
-        if (!connectionResolved && message.type === 'status' &&
-          (message.message?.includes('连接已建立') || message.message?.includes('WebSocket连接已建立'))) {
+        const statusMessage = typeof message.message === 'string' ? message.message : ''
+        if (
+          !connectionResolved &&
+          message.type === 'status' &&
+          (statusMessage.includes('连接已建立') || statusMessage.includes('WebSocket连接已建立'))
+        ) {
           console.log('🎉 收到服务器连接确认，连接完全建立')
           connectionResolved = true
           this.onConnectionStatusCallback?.('connected', 'WebSocket连接已建立')
@@ -707,12 +720,12 @@ export class VocaTaAIChat {
         this.handleAudioData(audioBuffer)
       })
 
-      this.wsClient.on('error', (error: any) => {
+      this.wsClient.on('error', (error) => {
         console.error('❌ WebSocket错误:', error)
         this.onConnectionStatusCallback?.('error', 'WebSocket连接错误')
         if (!connectionResolved) {
           connectionResolved = true
-          reject(error)
+          reject(error instanceof Error ? error : new Error('WebSocket连接错误'))
           finalize()
         }
       })
@@ -909,7 +922,7 @@ export class VocaTaAIChat {
   }
 
   // 设置回调函数
-  onMessage(callback: (message: any) => void): void {
+  onMessage(callback: (message: WebSocketMessage) => void): void {
     this.onMessageCallback = callback
   }
 
@@ -951,6 +964,10 @@ export class VocaTaAIChat {
 
   get playing(): boolean {
     return this.audioManager.playing
+  }
+
+  get voiceActive(): boolean {
+    return this.audioManager.recording
   }
 
   // 清理资源

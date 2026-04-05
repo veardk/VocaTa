@@ -42,11 +42,11 @@
 import { userApi } from '@/api/modules/user'
 import { removeToken } from '@/utils/token'
 import { ElMessage } from 'element-plus'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 const fullscreenLoading = ref(false)
 const props = defineProps(['modelValue'])
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'refresh'])
 
 const showPop = ref(false)
 const router = useRouter()
@@ -62,7 +62,7 @@ const toggleCollapse = () => {
 const getUserInfo = async () => {
   try {
     const res = await userApi.getAdminInfo()
-    if (res.code === 200) {
+    if (res.code === 200 && res.data) {
       userInfo.value = res.data.user
     }
     console.log(userInfo.value)

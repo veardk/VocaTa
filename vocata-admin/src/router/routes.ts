@@ -52,8 +52,6 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Root',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    meta: { title: '首页', hidden: true },
     redirect: '/role/roles'
   },
   // 404页面

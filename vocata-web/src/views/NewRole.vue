@@ -66,6 +66,7 @@ import type { UploadProps } from 'element-plus'
 import { getToken } from '@/utils/token'
 import { roleApi } from '@/api/modules/role'
 import { chatHistoryStore } from '@/store'
+import type { CreateCharacterRequest, TtsVoiceOption } from '@/types/api'
 import { useRouter } from 'vue-router'
 
 const isM = computed(() => isMobile())
@@ -75,7 +76,7 @@ const imageUrl = ref('')
 // AI生成状态
 const isGenerating = ref(false)
 // 表单数据
-const form = ref({
+const form = ref<CreateCharacterRequest>({
   name: '',
   description: '',
   greeting: '',
@@ -86,7 +87,7 @@ const form = ref({
 })
 
 // 音色
-const options = ref()
+const options = ref<TtsVoiceOption[]>([])
 const router = useRouter()
 //获取音色
 const getVoice = async () => {
@@ -96,7 +97,7 @@ const getVoice = async () => {
 }
 getVoice()
 
-const handleAvatarSuccess: UploadProps['onSuccess'] = (response, uploadFile) => {
+const handleAvatarSuccess: UploadProps['onSuccess'] = (response) => {
   imageUrl.value = response.data.fileUrl
   form.value.avatarUrl = response.data.fileUrl
 }

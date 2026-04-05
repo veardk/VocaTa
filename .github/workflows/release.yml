@@ -309,7 +309,7 @@ jobs:
           sleep 30
 
           # 验证新容器健康状态
-          if docker-compose exec -T $service curl -f http://localhost:$SERVER_PORT/api/actuator/health > /dev/null 2>&1; then
+          if docker-compose exec -T $service curl -f http://localhost:$SERVER_PORT/api/health > /dev/null 2>&1; then
             echo "✅ $service 新版本健康检查通过"
 
             # 切换流量，移除旧容器 (蓝色)
@@ -402,7 +402,7 @@ jobs:
 
         # API健康检查
         echo "### API服务验证" >> $GITHUB_STEP_SUMMARY
-        if curl -f -m 30 "https://api.vocata.com/api/actuator/health" > /dev/null 2>&1; then
+        if curl -f -m 30 "https://api.vocata.com/api/health" > /dev/null 2>&1; then
           echo "- ✅ API健康检查通过" >> $GITHUB_STEP_SUMMARY
         else
           echo "- ❌ API健康检查失败" >> $GITHUB_STEP_SUMMARY

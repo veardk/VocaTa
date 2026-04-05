@@ -15,7 +15,7 @@ import java.util.Map;
  */
 @SpringBootTest
 @ActiveProfiles("local")
-public class SiliconFlowApiUsageExample {
+public class SiliconFlowApiUsageExamples {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 

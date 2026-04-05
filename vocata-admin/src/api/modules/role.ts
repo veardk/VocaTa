@@ -1,6 +1,8 @@
 
 import request from '../request'
 
+type RoleListQuery = Record<string, string | number | boolean | undefined>
+
 export const roleApi = {
   //增
 
@@ -15,7 +17,7 @@ export const roleApi = {
   //改
 
   //查
-  getRoleList(params: any) {
+  getRoleList(params: RoleListQuery) {
     return request({
       url: '/api/admin/character',
       method: 'get',

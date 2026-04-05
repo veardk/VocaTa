@@ -24,7 +24,7 @@
           class="role-btn"
           @click="createNewRole"
           aria-label="新建角色"
-:class="route.meta.title === '新建角色' && route.meta.title !== '对话' ? 'active' : ''"
+          :class="String(route.meta.title) === '新建角色' ? 'active' : ''"
         >
           <div class="role-btn__icon">
             <el-icon><CirclePlusFilled /></el-icon>
@@ -35,7 +35,7 @@
           class="role-btn"
           @click="showRoleGallery"
           aria-label="选择角色"
-:class="route.meta.title === '探索' && route.meta.title !== '对话' ? 'active' : ''"
+          :class="String(route.meta.title) === '探索' ? 'active' : ''"
         >
           <div class="role-btn__icon">
             <el-icon><UserFilled /></el-icon>
@@ -163,7 +163,7 @@ import { userApi } from '@/api/modules/user'
 import { conversationApi } from '@/api/modules/conversation'
 import { isMobile } from '@/utils/isMobile'
 import { removeToken } from '@/utils/token'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 // import type { ChatHistoryItem } from '@/types/common'
@@ -193,7 +193,7 @@ const userInfo = ref({
 const searchText = ref('')
 const searchInput = ref()
 const userMenu = useTemplateRef('userMenu')
-const editInput = useTemplateRef('editInput')
+const editInput = useTemplateRef<InstanceType<typeof ElInput>[]>('editInput')
 const showUserMenu = ref(false)
 
 // 编辑相关状态
@@ -312,26 +312,15 @@ const handleChatAction = async (command: { action: string; chatId: string; title
   }
 }
 
-// 删除对话
-const deleteChat = async (conversationUuid: string, event: Event) => {
-  event.stopPropagation() // 阻止事件冒泡
-
-  try {
-    await chatHistoryStore().deleteChatHistory(conversationUuid)
-  } catch (error) {
-    console.error('删除对话失败:', error)
-    ElMessage.error('删除对话失败')
-  }
-}
-
 // 开始编辑标题
 const startEditTitle = (conversationUuid: string, currentTitle: string) => {
   editingChatId.value = conversationUuid
   editingTitle.value = currentTitle
   nextTick(() => {
-    if (editInput.value) {
-      editInput.value.focus()
-      editInput.value.select()
+    const input = editInput.value?.[0]
+    if (input) {
+      input.focus()
+      input.select()
     }
   })
 }

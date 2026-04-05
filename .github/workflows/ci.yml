@@ -34,22 +34,16 @@ jobs:
           server:
             - 'vocata-server/**'
             - 'pom.xml'
-            - '.github/workflows/**'
           web:
             - 'vocata-web/**'
-            - '.github/workflows/**'
           admin:
             - 'vocata-admin/**'
-            - '.github/workflows/**'
 
   # 后端服务CI
   backend-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.server-changed == 'true'
-    defaults:
-      run:
-        working-directory: ./vocata-server
 
     steps:
     - name: 检出代码
@@ -64,28 +58,18 @@ jobs:
     - name: 缓存 Maven 依赖
       uses: actions/cache@v4
       with:
-        path: ~/.m2
+        path: /tmp/juhao_m2repo
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
 
-    - name: 编译项目
-      run: mvn clean compile -DskipTests
-
-    - name: 运行单元测试
-      run: mvn test
-      continue-on-error: true
-
-    - name: 构建 JAR 包
-      run: mvn package -DskipTests
+    - name: 运行后端验证脚本
+      run: ./scripts/validate-backend.sh
 
   # 前端客户端CI
   frontend-web-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.web-changed == 'true'
-    defaults:
-      run:
-        working-directory: ./vocata-web
 
     steps:
     - name: 检出代码
@@ -101,22 +85,14 @@ jobs:
     - name: 安装依赖
       run: npm ci
 
-    - name: 代码检查
-      run: |
-        npm run lint
-        npm run type-check
-
-    - name: 构建应用
-      run: npm run build:test
+    - name: 运行用户端验证脚本
+      run: ./scripts/validate-web.sh
 
   # 管理后台CI
   frontend-admin-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.admin-changed == 'true'
-    defaults:
-      run:
-        working-directory: ./vocata-admin
 
     steps:
     - name: 检出代码
@@ -132,13 +108,8 @@ jobs:
     - name: 安装依赖
       run: npm ci
 
-    - name: 代码检查
-      run: |
-        npm run lint
-        npm run type-check
-
-    - name: 构建应用
-      run: npm run build:test
+    - name: 运行管理端验证脚本
+      run: ./scripts/validate-admin.sh
 
   # CI 结果汇总
   ci-summary:

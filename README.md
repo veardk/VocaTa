@@ -1,4 +1,26 @@
-# 一. 功能演示
+# VocaTa
+
+AI 驱动的实时语音角色扮演平台，支持语音/文本对话、角色创建、历史对话管理，以及多模型服务接入。
+
+## 当前仓库
+
+- 用户端前端：`vocata-web`
+- 管理后台：`vocata-admin`
+- 后端服务：`vocata-server`
+- 本地开发编排：`docker-compose.yml`
+- CI：`.github/workflows/ci.yml`
+- Staging 部署：`.github/workflows/cd-staging.yml`
+
+## 开发与部署入口
+
+- 开发环境说明：[`docs/开发环境说明.md`](docs/开发环境说明.md)
+- 部署环境说明：[`docs/部署环境说明.md`](docs/部署环境说明.md)
+- 验证清单：[`docs/验证清单.md`](docs/验证清单.md)
+- 开发工作流：[`docs/开发工作流.md`](docs/开发工作流.md)
+- 提交规范：[`docs/提交规范.md`](docs/提交规范.md)
+- 重构边界清单：[`docs/重构边界清单.md`](docs/重构边界清单.md)
+
+## 一. 功能演示
 
 演示视频：[http://t313actv0.hb-bkt.clouddn.com/bandicam%202025-09-28%2023-45-36-297.mp4](http://t313actv0.hb-bkt.clouddn.com/bandicam%202025-09-28%2023-45-36-297.mp4)
 
@@ -147,4 +169,3 @@
     - 李白：诗词创作工具
     - <font style="color:rgb(0, 0, 0);">哈利：魔法故事生成器</font>
     - <font style="color:rgb(0, 0, 0);">苏格拉底：论文思路梳理</font>
-

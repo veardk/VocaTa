@@ -38,7 +38,7 @@
             </el-icon>
             <span v-show="!isCollapse">{{ item.meta.title }}</span>
           </template>
-          <Menu :menuList="item.children"></Menu>
+          <MenuCom :menuList="item.children"></MenuCom>
         </el-sub-menu>
       </template>
     </template>
@@ -49,15 +49,9 @@
 import router from '@/router'
 
 defineProps(['isCollapse', 'menuList'])
-const goRoute = (vc) => {
+const goRoute = (vc: { index: string }) => {
   router.push(vc.index)
   console.log(vc.index)
-}
-</script>
-
-<script lang="ts">
-export default {
-  name: 'Menu',
 }
 </script>
 
